@@ -5,31 +5,32 @@ export const options = {
 
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { signInWithEmailAndPassword } from 'firebase/auth';
 import { Lock, User } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Image as RNImage, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '../components/ThemedText';
 import InputField from '../components/ui/InputField';
 import PrimaryButton from '../components/ui/PrimaryButton';
-import { auth } from '../firebase';
+import { useCollectorAuth } from '../hooks/useCollectorAuth';
 
 function LoginScreen() {
-  const [username, setUsername] = useState('');
+  const [firstName, setFirstName] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { login } = useCollectorAuth();
 
-  const handleLogin = async () => {
-    if (!username || !password) {
-      Alert.alert('Error', 'Please enter both email and password.');
-      return;
+  const handleCollectorLogin = async () => {
+    if (!firstName || !password) {
+      Alert.alert('Error', 'Please enter both first name and password.');
+      return; 
     }
+    
     setLoading(true);
     try {
-      // Use username as email for login
-      await signInWithEmailAndPassword(auth, username, password);
+      const collectorData = await login(firstName, password);
+      Alert.alert('Success', `Welcome back, ${collectorData.firstName}!`);
       router.replace('/(tabs)/home');
     } catch (error) {
       Alert.alert('Login Error', error.message);
@@ -43,14 +44,14 @@ function LoginScreen() {
       {/* Logo */}
       <RNImage source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
       <View style={styles.form}>
-        <ThemedText type="title" style={styles.title}>Log In</ThemedText>
-        <ThemedText style={styles.subtitle}>Welcome back! Please log in to your account.</ThemedText>
+        <ThemedText type="title" style={styles.title}>Collector Login</ThemedText>
+        <ThemedText style={styles.subtitle}>Please log in with your first name and password.</ThemedText>
         <InputField
           icon={<User size={22} color="#8BC500" />}
-          placeholder="Email address"
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
+          placeholder="First Name"
+          value={firstName}
+          onChangeText={setFirstName}
+          autoCapitalize="words"
           autoCorrect={false}
           style={styles.input}
         />
@@ -64,7 +65,7 @@ function LoginScreen() {
           onIconPress={() => setShowPassword((v) => !v)}
           style={styles.input}
         />
-        <PrimaryButton onPress={handleLogin} style={styles.button} disabled={loading}>
+        <PrimaryButton onPress={handleCollectorLogin} style={styles.button} disabled={loading}>
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (

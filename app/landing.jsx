@@ -10,7 +10,7 @@ export default function HomeScreen() {
       <View style={styles.headerSection}>
       <RNImage source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
       <Text style={styles.tagline}>
-          Get the fastest waste collection and enjoy a cleaner city.
+          Efficient waste collection management system.
         </Text>
       </View>
       

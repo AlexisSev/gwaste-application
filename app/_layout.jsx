@@ -3,6 +3,7 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { CollectorAuthProvider } from '../hooks/useCollectorAuth';
 import { useColorScheme } from '../hooks/useColorScheme';
 
 export default function RootLayout() {
@@ -17,15 +18,17 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack initialRouteName="index">
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="landing" options={{ title: 'Landing Page', headerShown: false }} />
-        <Stack.Screen name="login" options={{ title: 'Log In', headerShown: false }} />
-        <Stack.Screen name="signup" options={{ title: 'Sign Up', headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <CollectorAuthProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <Stack initialRouteName="index">
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="landing" options={{ title: 'Landing Page', headerShown: false }} />
+          <Stack.Screen name="login" options={{ title: 'Log In', headerShown: false }} />
+          <Stack.Screen name="signup" options={{ title: 'Sign Up', headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        </Stack>
+        <StatusBar style="auto" />
+      </ThemeProvider>
+    </CollectorAuthProvider>
   );
 }

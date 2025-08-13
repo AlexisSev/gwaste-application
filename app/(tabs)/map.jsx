@@ -1,72 +1,259 @@
-import React from 'react';
-import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
-
-const AREAS = [
-  // { name: 'Gairan', coords: { latitude: 10.750, longitude: 123.850 } },
-  // { name: 'Don Pedro', coords: { latitude: 10.755, longitude: 123.855 } },
-  // { name: 'Polambato', coords: { latitude: 10.760, longitude: 123.860 } },
-  // { name: 'Cayang', coords: { latitude: 10.765, longitude: 123.865 } },
-  // { name: 'Taylayan', coords: { latitude: 10.770, longitude: 123.870 } },
-  // ...add more areas as needed
-];
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+import { db } from '../../firebase';
+import { useCollectorAuth } from '../../hooks/useCollectorAuth';
 
 const { width } = Dimensions.get('window');
 
 export default function MapScreen() {
+  const [routes, setRoutes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedRoute, setSelectedRoute] = useState(null);
+  const { collector } = useCollectorAuth();
+
+  // Helper function to convert 24-hour format to 12-hour format with AM/PM
+  const formatTime = (timeString) => {
+    if (!timeString) return '';
+    try {
+      const [hours, minutes] = timeString.split(':');
+      const hour = parseInt(hours);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour % 12 || 12;
+      return `${displayHour}:${minutes} ${ampm}`;
+    } catch (error) {
+      return timeString; // Return original if parsing fails
+    }
+  };
+
+  useEffect(() => {
+    fetchDriverRoutes();
+  }, [collector]);
+
+  const fetchDriverRoutes = async () => {
+    if (!collector) return;
+    
+    try {
+      setLoading(true);
+      const routesRef = collection(db, 'routes');
+      const q = query(routesRef, where('driver', '==', collector.driver));
+      const querySnapshot = await getDocs(q);
+      
+      const routesData = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        routesData.push({
+          id: doc.id,
+          ...data
+        });
+      });
+      
+      setRoutes(routesData);
+      if (routesData.length > 0) {
+        setSelectedRoute(routesData[0]);
+      }
+    } catch (error) {
+      console.error('Error fetching routes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderMarkers = () => {
+    if (!selectedRoute) return null;
+
+    const markers = [];
+    
+    // Add driver's starting point (Bogo City Hall)
+    markers.push(
+      <Marker
+        key="city-hall"
+        coordinate={{ latitude: 11.046419171933303, longitude: 123.97920466105226 }}
+        title="Bogo City Hall"
+      >
+        <Text style={{ fontSize: 32 }}>🚛</Text>
+      </Marker>
+    );
+
+    // Add area markers if coordinates are available
+    if (selectedRoute.coordinates && Array.isArray(selectedRoute.coordinates)) {
+      selectedRoute.coordinates.forEach((coord, index) => {
+        if (coord && coord.latitude && coord.longitude) {
+          markers.push(
+            <Marker
+              key={`area-${index}`}
+              coordinate={coord}
+              title={selectedRoute.areas && selectedRoute.areas[index] ? selectedRoute.areas[index] : `Area ${index + 1}`}
+              pinColor="#458A3D"
+            />
+          );
+        }
+      });
+    }
+
+    return markers;
+  };
+
+  const renderRouteLine = () => {
+    if (!selectedRoute || !selectedRoute.coordinates) {
+      return null;
+    }
+
+    // Handle different coordinate formats
+    let coordinates = [];
+    
+    if (Array.isArray(selectedRoute.coordinates)) {
+      // If coordinates is an array of coordinate objects
+      coordinates = selectedRoute.coordinates.filter(coord => 
+        coord && (coord.latitude || coord.lat) && (coord.longitude || coord.lng)
+      ).map(coord => ({
+        latitude: coord.latitude || coord.lat,
+        longitude: coord.longitude || coord.lng
+      }));
+    } else if (typeof selectedRoute.coordinates === 'object') {
+      // If coordinates is a single object with multiple coordinate properties
+      const coordEntries = Object.entries(selectedRoute.coordinates);
+      coordinates = coordEntries
+        .filter(([key, coord]) => coord && (coord.latitude || coord.lat) && (coord.longitude || coord.lng))
+        .map(([key, coord]) => ({
+          latitude: coord.latitude || coord.lat,
+          longitude: coord.longitude || coord.lng
+        }));
+    }
+
+    // Add starting point (Bogo City Hall)
+    coordinates.unshift({ latitude: 11.046419171933303, longitude: 123.97920466105226 });
+
+    if (coordinates.length < 2) {
+      return null;
+    }
+
+    return (
+      <Polyline
+        coordinates={coordinates}
+        strokeColor="#458A3D"
+        strokeWidth={4}
+        lineDashPattern={[8, 4]}
+        zIndex={1}
+      />
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.routeTitle}>Loading Routes...</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#458A3D" />
+          <Text style={styles.loadingText}>Fetching your assigned routes...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!collector) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.routeTitle}>Not Logged In</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Please log in to view your routes</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.routeTitle}>Route 1 – Barangay San Isidro</Text>
+        <Text style={styles.routeTitle}>
+          {selectedRoute ? `Route ${selectedRoute.route} - ${selectedRoute.type || 'Waste Collection'}` : 'No Routes Assigned'}
+        </Text>
         <TouchableOpacity>
           <Text style={styles.allRoutes}>All Routes</Text>
         </TouchableOpacity>
       </View>
+
       {/* Map Area */}
       <MapView
         style={styles.map}
         initialRegion={{
           latitude: 11.046419171933303,
           longitude: 123.97920466105226,
-          latitudeDelta: 0.01, // Zoom in closer to city hall
+          latitudeDelta: 0.01,
           longitudeDelta: 0.01,
         }}
         showsUserLocation={false}
       >
-        {/* Bogo City Hall Marker with Truck Emoji */}
-        <Marker
-          coordinate={{ latitude: 11.046419171933303, longitude: 123.97920466105226 }}
-          title="Bogo City Hall"
-        >
-          <Text style={{ fontSize: 32 }}>🚛</Text>
-        </Marker>
-        {AREAS.map(area => (
-          <Marker
-            key={area.name}
-            coordinate={area.coords}
-            title={area.name}
-          />
-        ))}
+        {renderMarkers()}
+        {renderRouteLine()}
       </MapView>
+
       {/* Bottom Card */}
-      <View style={styles.bottomCard}>
-        <Text style={styles.timeText}>7:00 AM — Public Market</Text>
-        <Text style={styles.barangayText}>Barangay 3</Text>
-        <View style={styles.badgeRow}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>Biodegradable</Text>
+      {selectedRoute && (
+        <View style={styles.bottomCard}>
+          <Text style={styles.timeText}>
+            {formatTime(selectedRoute.time)} — {formatTime(selectedRoute.endTime) || 'End Time'}
+          </Text>
+          <Text style={styles.barangayText}>
+            {selectedRoute.areas && selectedRoute.areas.length > 0 
+              ? selectedRoute.areas.join(' • ') 
+              : 'Areas to collect'}
+          </Text>
+          <Text style={styles.frequencyText}>
+            {selectedRoute.frequency || 'Schedule'} • {selectedRoute.dayOff ? `Day off: ${selectedRoute.dayOff}` : ''}
+          </Text>
+          <View style={styles.badgeRow}>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{selectedRoute.type || 'Waste Collection'}</Text>
+            </View>
+            {selectedRoute.color && (
+              <View style={[styles.colorBadge, { backgroundColor: selectedRoute.color }]}>
+                <Text style={styles.colorBadgeText}>Route {selectedRoute.route}</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity style={styles.collectButton}>
+              <Text style={styles.collectButtonText}>Mark as Collected</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.issueButton}>
+              <Text style={styles.issueButtonText}>Report Issue</Text>
+            </TouchableOpacity>
           </View>
         </View>
-        <View style={styles.buttonRow}>
-          <TouchableOpacity style={styles.collectButton}>
-            <Text style={styles.collectButtonText}>Mark as Collected</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.issueButton}>
-            <Text style={styles.issueButtonText}>Report Issue</Text>
-          </TouchableOpacity>
+      )}
+
+      {/* Route Selector */}
+      {routes.length > 1 && (
+        <View style={styles.routeSelector}>
+          <Text style={styles.selectorTitle}>Select Route:</Text>
+          <View style={styles.routeButtons}>
+            {routes.map((route) => (
+              <TouchableOpacity
+                key={route.id}
+                style={[
+                  styles.routeButton,
+                  selectedRoute?.id === route.id && styles.routeButtonActive
+                ]}
+                onPress={() => setSelectedRoute(route)}
+              >
+                <Text style={[
+                  styles.routeButtonText,
+                  selectedRoute?.id === route.id && styles.routeButtonTextActive
+                ]}>
+                  Route {route.route}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -90,17 +277,29 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#222',
+    flex: 1,
   },
   allRoutes: {
     fontSize: 15,
     color: '#007AFF',
     fontWeight: '500',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+  },
   map: {
     flex: 1,
     width: '100%',
     borderRadius: 18,
-    // Remove marginTop: 10,
     marginBottom: 0,
     overflow: 'hidden',
   },
@@ -126,8 +325,14 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   barangayText: {
-    fontSize: 15,
-    color: '#666',
+    fontSize: 16,
+    color: '#222',
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  frequencyText: {
+    fontSize: 13,
+    color: '#888',
     marginBottom: 8,
   },
   badgeRow: {
@@ -143,6 +348,16 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     color: '#34C759',
+    fontWeight: '500',
+    fontSize: 13,
+  },
+  colorBadge: {
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  colorBadgeText: {
+    color: '#fff',
     fontWeight: '500',
     fontSize: 13,
   },
@@ -177,5 +392,47 @@ const styles = StyleSheet.create({
     color: '#222',
     fontWeight: '600',
     fontSize: 16,
+  },
+  routeSelector: {
+    position: 'absolute',
+    top: 120,
+    left: 20,
+    right: 20,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  selectorTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#222',
+    marginBottom: 12,
+  },
+  routeButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  routeButton: {
+    backgroundColor: '#f2f2f2',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  routeButtonActive: {
+    backgroundColor: '#458A3D',
+  },
+  routeButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+  },
+  routeButtonTextActive: {
+    color: '#fff',
   },
 });

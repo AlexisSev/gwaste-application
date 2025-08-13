@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { AlertCircle, Home, MapPin } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { auth, db } from '../../firebase';
+import { db } from '../../firebase';
+import { useCollectorAuth } from '../../hooks/useCollectorAuth';
 
 export default function LandingScreen() {
   const [displayName, setDisplayName] = useState('');
@@ -14,44 +15,79 @@ export default function LandingScreen() {
   const [routeNames, setRouteNames] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const router = useRouter();
+  const { collector, logout } = useCollectorAuth();
+
+  // Helper function to convert 24-hour format to 12-hour format with AM/PM
+  const formatTime = (timeString) => {
+    if (!timeString) return '';
+    try {
+      const [hours, minutes] = timeString.split(':');
+      const hour = parseInt(hours);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour % 12 || 12;
+      return `${displayHour}:${minutes} ${ampm}`;
+    } catch (error) {
+      return timeString; // Return original if parsing fails
+    }
+  };
 
   useEffect(() => {
-    const fetchUserAndRoutes = async () => {
-      const user = auth.currentUser;
-      if (user) {
+    const fetchCollectorAndRoutes = async () => {
+      if (collector) {
         try {
-          // Fetch user profile
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            setDisplayName(userDoc.data().username || '');
-          } else {
-            setDisplayName('');
-          }
-          // Fetch assigned routes
-          const routesQuery = query(collection(db, 'routes'), where('userId', '==', user.uid));
+          setDisplayName(collector.driver || collector.firstName || '');
+          
+          // Fetch assigned routes for this collector using driver field
+          const routesQuery = query(collection(db, 'routes'), where('driver', '==', collector.driver));
           const routesSnapshot = await getDocs(routesQuery);
           setAssignedRoutes(routesSnapshot.size);
-          // Count areas collected by user
+          
+          // Process route data for schedule and areas
           let collectedCount = 0;
           let scheduleList = [];
           let routeNameList = [];
+          
           routesSnapshot.forEach(docSnap => {
             const data = docSnap.data();
+            
+            // Add route to route names
+            if (data.route) {
+              routeNameList.push(`Route ${data.route}`);
+            }
+            
+            // Create schedule entry from route data
+            if (data.time && data.areas && data.areas.length > 0) {
+              const scheduleEntry = {
+                time: data.time,
+                endTime: data.endTime,
+                location: data.areas.join(', '),
+                routeNumber: data.route,
+                type: data.type || 'Waste Collection',
+                frequency: data.frequency,
+                dayOff: data.dayOff
+              };
+              scheduleList.push(scheduleEntry);
+            }
+            
+            // Count collected areas if available
             if (data.collectedAreas) {
-              collectedCount += data.collectedAreas.filter(a => a.userId === user.uid).length;
-            }
-            if (data.schedule) {
-              scheduleList = scheduleList.concat(data.schedule);
-            }
-            if (data.routeName) {
-              routeNameList.push(data.routeName);
+              collectedCount += data.collectedAreas.filter(a => a.driver === collector.driver).length;
             }
           });
+          
+          // Sort schedule by time
+          scheduleList.sort((a, b) => {
+            const timeA = new Date(`2000-01-01 ${a.time}`);
+            const timeB = new Date(`2000-01-01 ${b.time}`);
+            return timeA - timeB;
+          });
+          
           setAreasCollected(collectedCount);
           setTodaysSchedule(scheduleList);
           setRouteNames(routeNameList);
         } catch (e) {
-          setDisplayName('');
+          console.error('Error fetching collector data:', e);
+          setDisplayName(collector.driver || collector.firstName || '');
           setAssignedRoutes(0);
           setAreasCollected(0);
           setTodaysSchedule([]);
@@ -66,8 +102,20 @@ export default function LandingScreen() {
       }
       setLoading(false);
     };
-    fetchUserAndRoutes();
-  }, []);
+    fetchCollectorAndRoutes();
+  }, [collector]);
+
+  const handleLogout = async () => {
+    setShowDropdown(false);
+    await logout();
+    router.replace('/login');
+  };
+
+  // If no collector is authenticated, redirect to login
+  if (!collector) {
+    router.replace('/login');
+    return null;
+  }
 
   return (
     <View style={styles.container}>
@@ -96,11 +144,7 @@ export default function LandingScreen() {
             <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/settings'); }}>
               <Text style={styles.dropdownText}>Settings</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.dropdownItem} onPress={async () => {
-              setShowDropdown(false);
-              await auth.signOut();
-              router.replace('/login');
-            }}>
+            <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
               <Text style={styles.dropdownText}>Logout</Text>
             </TouchableOpacity>
           </View>
@@ -115,7 +159,7 @@ export default function LandingScreen() {
             <ActivityIndicator size="small" color="#8BC500" />
           ) : (
             <Text style={styles.greeting}>
-              Good Morning{displayName ? `, ${displayName}` : ''}!
+              Good Morning{displayName ? `, ${displayName}` : ''}! Ready to collect?
             </Text>
           )}
           <View style={styles.routeInfo}>
@@ -156,7 +200,7 @@ export default function LandingScreen() {
                 {todaysSchedule.length > 0 ? todaysSchedule[0].location : 'No more stops'}
               </Text>
               <Text style={styles.nextStopTime}>
-                {todaysSchedule.length > 0 ? todaysSchedule[0].time : ''}
+                {todaysSchedule.length > 0 ? `${formatTime(todaysSchedule[0].time)} - ${formatTime(todaysSchedule[0].endTime) || 'End Time'} • Route ${todaysSchedule[0].routeNumber}` : ''}
               </Text>
             </View>
             <View style={styles.timeCircle}>
@@ -176,8 +220,16 @@ export default function LandingScreen() {
             ) : (
               todaysSchedule.map((item, idx) => (
                 <View style={styles.scheduleItem} key={idx}>
-                  <Text style={styles.scheduleTime}>{item.time}</Text>
-                  <Text style={styles.scheduleLocation}>{item.location}</Text>
+                  <View style={styles.scheduleTimeContainer}>
+                    <Text style={styles.scheduleRoute}>Route {item.routeNumber}</Text>
+                  </View>
+                  <View style={styles.scheduleLocationContainer}>
+                    <Text style={styles.scheduleLocation}>{item.location}</Text>
+                    <Text style={styles.scheduleType}>{item.type}</Text>
+                    {item.frequency && (
+                      <Text style={styles.scheduleFrequency}>{item.frequency}</Text>
+                    )}
+                  </View>
                 </View>
               ))
             )}
@@ -362,18 +414,50 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    minHeight: 80,
+  },
+  scheduleTimeContainer: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    marginRight: 16,
+    minWidth: 80,
   },
   scheduleTime: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
   },
+  scheduleEndTime: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  scheduleRoute: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  scheduleLocationContainer: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
   scheduleLocation: {
     fontSize: 16,
     color: '#333',
     textAlign: 'left',
-    flex: 1,
-    marginLeft: 150,
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  scheduleType: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  scheduleFrequency: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
   },
   dropdownMenu: {
     position: 'absolute',

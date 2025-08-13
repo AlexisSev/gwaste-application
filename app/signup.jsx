@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
-import { Lock, Mail, Phone, User } from 'lucide-react-native';
+import { Lock, Phone, User } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, LogBox, Image as RNImage, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '../components/ThemedText';
@@ -21,40 +21,47 @@ export default function SignupScreen() {
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [verificationId, setVerificationId] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [showOTPInput, setShowOTPInput] = useState(false);
+  const [userType, setUserType] = useState('collector'); // Default to collector
   const router = useRouter();
 
-  const handleSignup = async () => {
-    if (!firstName || !lastName || !username || !phone || !email || !password) {
+  const handleSendOTP = async () => {
+    if (!firstName || !lastName || !username || !phone || !password) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
+    
+    if (phone.length < 10) {
+      Alert.alert('Error', 'Please enter a valid phone number.');
+      return;
+    }
+
     setLoading(true);
     try {
-      // Create user with email and password
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      // Format phone number for Firebase (add +1 for US, adjust for your country)
+      const formattedPhone = phone.startsWith('+') ? phone : `+1${phone}`;
+      
+      // For now, we'll use a simple approach with email-based auth
+      // since phone auth requires additional setup
+      const tempEmail = `${username}@collector.local`;
+      
+      // Create user with temporary email
+      const userCredential = await createUserWithEmailAndPassword(auth, tempEmail, password);
       const user = userCredential.user;
 
-      // Store additional user info in Firestore (users)
-      await setDoc(doc(db, "users", user.uid), {
-        firstName,
-        lastName,
-        username,
-        phone,
-        email,
-        createdAt: new Date(),
-      });
-
-      // Store collector info in Firestore (collectors)
+      // Store collector info in Firestore
       await setDoc(doc(db, "collectors", user.uid), {
         firstName,
         lastName,
         username,
-        phone,
-        email,
+        phone: formattedPhone,
+        tempEmail, // Store the temp email for reference
+        userType: 'collector',
         createdAt: new Date(),
         driver: username, // Add driver field for admin dropdown
         status: "active", // Add status field for admin dropdown
@@ -65,11 +72,10 @@ export default function SignupScreen() {
       setLastName('');
       setUsername('');
       setPhone('');
-      setEmail('');
       setPassword('');
 
       // Navigate to login or show success
-      Alert.alert('Success', 'Account created successfully!');
+      Alert.alert('Success', 'Collector account created successfully! You can now login with your username and password.');
       router.push('/login');
     } catch (error) {
       Alert.alert('Signup Error', error.message);
@@ -83,8 +89,8 @@ export default function SignupScreen() {
       {/* Logo */}
       <RNImage source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
       <View style={styles.form}>
-        <ThemedText type="title" style={styles.title}>Create Account</ThemedText>
-        <ThemedText style={styles.subtitle}>Fill your information below or register with your social account.</ThemedText>
+        <ThemedText type="title" style={styles.title}>Create Collector Account</ThemedText>
+        <ThemedText style={styles.subtitle}>Fill your information below to register as a waste collector.</ThemedText>
         <InputField
           icon={<User size={22} color="#8BC500" />}
           placeholder="First Name"
@@ -121,16 +127,6 @@ export default function SignupScreen() {
           style={styles.input}
         />
         <InputField
-          icon={<Mail size={22} color="#8BC500" />}
-          placeholder="Email address"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={styles.input}
-        />
-        <InputField
           icon={<Lock size={22} color="#8BC500" />}
           placeholder="Password"
           value={password}
@@ -140,11 +136,11 @@ export default function SignupScreen() {
           onIconPress={() => setShowPassword((v) => !v)}
           style={styles.input}
         />
-        <PrimaryButton onPress={handleSignup} style={styles.button} disabled={loading}>
+        <PrimaryButton onPress={handleSendOTP} style={styles.button} disabled={loading}>
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>Create account</Text>
+            <Text style={styles.buttonText}>Create Collector Account</Text>
           )}
         </PrimaryButton>
         <TouchableOpacity onPress={() => router.push('/login')}>
@@ -217,4 +213,5 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+
 }); 
