@@ -46,10 +46,15 @@ export const CollectorAuthProvider = ({ children }) => {
 
       querySnapshot.forEach((doc) => {
         const data = doc.data();
+
+        const fullNameLower = data.driver ? data.driver.trim().toLowerCase() : '';
+        const firstNameLower = data.firstName
+          ? data.firstName.trim().toLowerCase()
+          : (data.driver ? data.driver.trim().split(/\s+/)[0].toLowerCase() : '');
+
         if (
-          data.driver &&
           data.password &&
-          data.driver.trim().toLowerCase() === driverLower &&
+          (fullNameLower === driverLower || firstNameLower === driverLower) &&
           data.password === password
         ) {
           collectorFound = true;
@@ -58,7 +63,7 @@ export const CollectorAuthProvider = ({ children }) => {
       });
 
       if (!collectorFound) {
-        throw new Error('Invalid driver name or password.');
+        throw new Error('Invalid first name or password.');
       }
 
       await AsyncStorage.setItem('collectors', JSON.stringify(collectorData));

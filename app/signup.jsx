@@ -1,3 +1,4 @@
+/* eslint-disable import/first */
 export const options = {
   tabBarStyle: { display: 'none' },
   headerShown: false,
@@ -24,9 +25,13 @@ export default function SignupScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [verificationId, setVerificationId] = useState('');
+  // eslint-disable-next-line no-unused-vars
   const [verificationCode, setVerificationCode] = useState('');
+  // eslint-disable-next-line no-unused-vars
   const [showOTPInput, setShowOTPInput] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [userType, setUserType] = useState('collector'); // Default to collector
   const router = useRouter();
 

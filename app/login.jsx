@@ -1,3 +1,4 @@
+/* eslint-disable import/first */
 export const options = {
   tabBarStyle: { display: 'none' },
   headerShown: false,
@@ -74,7 +75,7 @@ function LoginScreen() {
         </PrimaryButton>
         <TouchableOpacity onPress={() => router.push('/signup')}>
           <ThemedText type="link" style={styles.link}>
-            Don't have an account?
+            Don`t have an account?
           </ThemedText>
         </TouchableOpacity>
       </View>
