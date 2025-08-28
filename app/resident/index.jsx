@@ -1,117 +1,210 @@
-import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import React from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
+import { signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
+import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { auth, db } from '../../firebase';
 
-import { Colors } from '../../constants/Colors';
-import { useColorScheme } from '../../hooks/useColorScheme';
+export default function ResidentIndex() {
+  const params = useLocalSearchParams();
+  const [residentData, setResidentData] = useState(null);
+  const [isDropdownVisible, setIsDropdownVisible] = useState(false);
 
-export default function HomeScreen() {
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
-  const [hasProfileImage, setHasProfileImage] = React.useState(true);
-  const router = useRouter();
+  useEffect(() => {
+    const loadResidentData = async () => {
+      try {
+        // First check if we have data from params
+        if (params.firstName && params.purok && params.address) {
+          setResidentData({
+            firstName: params.firstName,
+            purok: params.purok,
+            address: params.address
+          });
+          return;
+        }
+
+        // If no params, try to get data from Firebase
+        const user = auth.currentUser;
+        if (user) {
+          const residentRef = doc(db, 'residents', user.uid);
+          const residentSnap = await getDoc(residentRef);
+          
+          if (residentSnap.exists()) {
+            setResidentData(residentSnap.data());
+          }
+        }
+      } catch (error) {
+        console.error('Error loading resident data:', error);
+        Alert.alert('Error', 'Could not load resident data');
+      }
+    };
+
+    if (!residentData) {
+      loadResidentData();
+    }
+  }, [params.firstName, params.purok, params.address]);
+
+  // Handle missing data case
+  if (!residentData) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.content}>
+          <Text>Loading resident data...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Get greeting based on time of day
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      "Logout Confirmation",
+      "Are you sure you want to logout?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Logout",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await signOut(auth);
+              router.push('/login');
+            } catch (error) {
+              console.error('Error signing out:', error);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style="auto" />
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Header Section */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <View style={styles.logoContainer}>
-              <Feather name="truck" size={24} color={colors.primary} />
-              <Text style={[styles.appName, { color: colors.primary }]}>Gwaste</Text>
-            </View>
-            <Text style={[styles.greeting, { color: colors.primary }]}>Good Morning Ana!</Text>
-            <View style={styles.locationContainer}>
-              <Feather name="map-pin" size={16} color={colors.location} />
-              <Text style={[styles.locationText, { color: colors.icon }]}> 
-                Gairan, Bogo City, Purok Rosal
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.logoContainer}>
+          <Image 
+            source={require('../../assets/images/logo.png')} 
+            style={styles.logo}
+          />
+        </View>
+        <TouchableOpacity 
+          style={styles.profileContainer}
+          onPress={() => setIsDropdownVisible(!isDropdownVisible)}
+        >
+          <Image 
+            source={require('../../assets/images/icon.png')} 
+            style={styles.profilePic}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {isDropdownVisible && (
+        <View style={styles.dropdownMenu}>
+          <TouchableOpacity style={styles.dropdownItem}>
+            <Text style={styles.dropdownText}>Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dropdownItem}>
+            <Text style={styles.dropdownText}>Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
+            <Text style={styles.dropdownText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <ScrollView 
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          <Text style={styles.greeting}>
+            {getGreeting()} {residentData?.firstName || 'Resident'}!
+          </Text>
+          <View style={styles.locationContainer}>
+            <FontAwesome5 name="map-marker-alt" size={20} color="#666" />
+            <View style={styles.addressContainer}>
+              <Text style={styles.purok}>
+                Purok {residentData?.purok || 'Loading...'}
+              </Text>
+              <Text style={styles.location}>
+                {residentData?.address || 'Loading...'}
               </Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.profileContainer} activeOpacity={0.8} onPress={() => router.push('/profile')}>
-            {hasProfileImage ? (
-              <Image
-                source={{ uri: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=100&h=100&fit=crop&crop=face' }}
-                style={styles.profileImage}
-                onError={() => setHasProfileImage(false)}
-              />
-            ) : (
-              <View style={[styles.profilePlaceholder, { backgroundColor: colors.lightGreen }]}>
-                <Feather name="user" size={22} color={colors.primary} />
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
 
-        {/* Collection Schedule Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Collection Schedule:</Text>
-          
-          {/* Next Pickup Card */}
-          <View style={[styles.card, { backgroundColor: colors.cardBackground }]}>
-            <View style={styles.cardLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: colors.lightGreen }]}>
-                <Feather name="refresh-ccw" size={28} color={colors.primary} />
+          <View style={styles.scheduleCard}>
+            <Text style={styles.scheduleTitle}>Collection Schedule:</Text>
+            <View style={styles.nextPickup}>
+              <View style={styles.wasteTypeIcon}>
+                <FontAwesome5 name="recycle" size={24} color="#4CAF50" />
               </View>
-            </View>
-            <View style={styles.cardRight}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>Next Pickup</Text>
-              <Text style={[styles.cardTime, { color: colors.text }]}>July 10, 7:00 AM</Text>
-              <Text style={[styles.cardType, { color: colors.primary }]}>Biodegradable</Text>
+              <View>
+                <Text style={styles.pickupLabel}>Next Pickup</Text>
+                <Text style={styles.pickupDate}>July 10, 7:00 AM</Text>
+                <Text style={styles.wasteType}>Biodegradable</Text>
+              </View>
             </View>
           </View>
 
-          {/* Truck Location Card */}
-          <View style={[styles.card, { backgroundColor: colors.cardBackground }]}>
-            <View style={styles.cardLeft}>
-              <View style={styles.mapContainer}>
-                <View style={styles.mapPlaceholder}>
-                  <Feather name="map" size={20} color={colors.primary} />
-                  <View style={styles.routeLine} />
-                  <View style={[styles.locationPin, { backgroundColor: colors.primary }]} />
-                </View>
-              </View>
+          <View style={styles.mapPreview}>
+            {/* Map preview component would go here */}
+            <View style={styles.truckInfo}>
+              <Text style={styles.truckText}>Truck is</Text>
+              <Text style={styles.truckDistance}>1km away</Text>
             </View>
-            <View style={styles.cardRight}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>Truck is</Text>
-              <Text style={[styles.cardTime, { color: colors.text }]}>1 km away</Text>
-              <TouchableOpacity style={styles.viewMapButton}>
-                <Text style={[styles.viewMapText, { color: colors.primary }]}>View on Map</Text>
-                <Feather name="chevron-right" size={14} color={colors.primary} />
-              </TouchableOpacity>
+            <TouchableOpacity style={styles.viewMapButton}>
+              <Text style={styles.viewMapText}>View on Map</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.scheduleContainer}>
+            <Text style={styles.mainScheduleTitle}>Collection Schedule:</Text>
+            
+            {/* Schedule Items */}
+            <View style={styles.scheduleList}>
+              <View style={styles.scheduleItem}>
+                <Text style={styles.scheduleTime}>10:30 AM</Text>
+                <Text style={styles.scheduleLocation}>Barangay Sambag</Text>
+              </View>
+              
+              <View style={styles.scheduleItem}>
+                <Text style={styles.scheduleTime}>11:30 AM</Text>
+                <Text style={styles.scheduleLocation}>Barangay Gairan</Text>
+              </View>
             </View>
           </View>
         </View>
-
-        {/* Upcoming Pickups Section */}
-  <View style={styles.section}>
-    <Text style={[styles.sectionTitle, { color: colors.primary }]}>Collection Schedule:</Text>
-
-    {/* Upcoming Pickup Items */}
-    <View style={[styles.chip, { borderColor: colors.chipBorder, backgroundColor: colors.chipBg }]}>
-      <View style={styles.chipTimeBox}>
-        <Text style={[styles.upcomingTime, { color: colors.text }]}>10:30 AM</Text>
-      </View>
-      <Text style={[styles.upcomingLocation, { color: colors.text }]}>Barangay Sambag</Text>
-    </View>
-
-    <View style={[styles.chip, { borderColor: colors.chipBorder, backgroundColor: colors.chipBg }]}>
-      <View style={styles.chipTimeBox}>
-        <Text style={[styles.upcomingTime, { color: colors.text }]}>11:30 AM</Text>
-      </View>
-      <Text style={[styles.upcomingLocation, { color: colors.text }]}>Barangay Gairan</Text>
-    </View>
-  </View>
-
-
-        {/* Bottom spacing for tab bar */}
-        <View style={styles.bottomSpacing} />
       </ScrollView>
+
+      <View style={styles.bottomNav}>
+        <TouchableOpacity style={styles.navItem}>
+          <FontAwesome5 name="home" size={24} color="#4CAF50" />
+          <Text style={[styles.navText, styles.activeNav]}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem}>
+          <FontAwesome5 name="map-marked-alt" size={24} color="#666" />
+          <Text style={styles.navText}>Map</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem}>
+          <FontAwesome5 name="calendar-alt" size={24} color="#666" />
+          <Text style={styles.navText}>Schedule</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem}>
+          <FontAwesome5 name="list" size={24} color="#666" />
+          <Text style={styles.navText}>Categorize</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -119,175 +212,209 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-    paddingHorizontal: 20,
+    backgroundColor: '#f8f9fa',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingTop: 20,
-    paddingBottom: 24,
-  },
-  headerLeft: {
-    flex: 1,
+    alignItems: 'center',
+    padding: 17,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
   logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
+    height: 40,
   },
-  appName: {
-    fontSize: 26,
-    fontWeight: '700',
-    marginLeft: 8,
+  logo: {
+    height: 40,
+    width: 80,
+    resizeMode: 'contain',
+  },
+  profileContainer: {
+    position: 'relative'
+  },
+  profilePic: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  scrollView: {
+    flex: 1,
+    marginTop: 4,
+    backgroundColor: '#f8f9fa'
+  },
+  content: {
+    flex: 1,
+    padding: 16,
   },
   greeting: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 6,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+    marginBottom: 8,
   },
   locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 24,
   },
-  locationText: {
-    fontSize: 13,
-    marginLeft: 6,
+  addressContainer: {
+    marginLeft: 8,
   },
-  profileContainer: {
-    marginLeft: 16,
+  purok: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
   },
-  profileImage: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  location: {
+    fontSize: 16,
+    color: '#666',
   },
-  profilePlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
+  scheduleCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 2,
+  },
+  scheduleTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+    marginBottom: 16,
+  },
+  nextPickup: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  section: {
-    marginBottom: 26,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 14,
-  },
-  card: {
-    flexDirection: 'row',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-  },
-  cardLeft: {
+  wasteTypeIcon: {
     marginRight: 16,
   },
-  cardRight: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  mapContainer: {
-    width: 80,
-    height: 60,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  mapPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#E8F5E8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  routeLine: {
-    position: 'absolute',
-    width: 48,
-    height: 2,
-    backgroundColor: '#4CAF50',
-    top: '50%',
-    left: '8%',
-  },
-  locationPin: {
-    position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    bottom: 8,
-    right: 8,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  cardTime: {
+  pickupLabel: {
     fontSize: 14,
-    marginBottom: 4,
+    color: '#666',
   },
-  cardType: {
-    fontSize: 13,
-    fontWeight: '600',
+  pickupDate: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  wasteType: {
+    fontSize: 14,
+    color: '#4CAF50',
+  },
+  mapPreview: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    elevation: 2,
+  },
+  truckInfo: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  truckText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  truckDistance: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginLeft: 4,
   },
   viewMapButton: {
-    flexDirection: 'row',
+    backgroundColor: '#4CAF50',
+    padding: 8,
+    borderRadius: 8,
     alignItems: 'center',
   },
   viewMapText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginRight: 4,
+    color: '#fff',
+    fontWeight: 'bold',
   },
-  chip: {
+  bottomNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: 12,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  navItem: {
+    alignItems: 'center',
+  },
+  navText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
+  activeNav: {
+    color: '#4CAF50',
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 2000,
+    minWidth: 150
+  },
+  dropdownItem: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee'
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#333'
+  },
+  scheduleContainer: {
+    backgroundColor: '#fff',
+    padding: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  mainScheduleTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+    marginBottom: 16,
+  },
+  scheduleList: {
+    gap: 12,
+  },
+  scheduleItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 10,
-  },
-  chipTimeBox: {
-    backgroundColor: '#F6EAA5',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    backgroundColor: '#E8F5E9',
+    padding: 16,
     borderRadius: 8,
-    marginRight: 12,
   },
-  upcomingTime: {
-    fontSize: 13,
-    fontWeight: '700',
+  scheduleTime: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2E7D32',
+    width: 90,
   },
-  upcomingLocation: {
-    fontSize: 15,
-    fontWeight: '700',
+  scheduleLocation: {
+    fontSize: 16,
+    color: '#1B5E20',
     flex: 1,
-    marginLeft: 2,
-  },
-  bottomSpacing: {
-    height: 100,
-  },
+  }
 });
-
-

@@ -22,7 +22,7 @@ export default function HomeScreen() {
       {/* Buttons Section */}
       <View style={styles.buttonSection}>
         <PrimaryButton
-          onPress={() => router.push('/resident/signup')}
+          onPress={() => router.push('/signup')}
           style={styles.signUpButton}
         >
           <Text style={styles.signUpButtonText}>Sign Up</Text>

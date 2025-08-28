@@ -1,17 +1,13 @@
-/* eslint-disable import/first */
-export const options = {
-  tabBarStyle: { display: 'none' },
-  headerShown: false,
-};
-
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Lock, User } from 'lucide-react-native';
-import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Image as RNImage, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image as RNImage, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ThemedText } from '../components/ThemedText';
 import InputField from '../components/ui/InputField';
 import PrimaryButton from '../components/ui/PrimaryButton';
+import { db } from '../firebase';
 import { useCollectorAuth } from '../hooks/useCollectorAuth';
 
 function LoginScreen() {
@@ -30,9 +26,50 @@ function LoginScreen() {
     
     setLoading(true);
     try {
+      // Try resident login first (query by firstName, then verify password)
+      const residentsRef = collection(db, 'residents');
+      const firstExactQuery = query(residentsRef, where('firstName', '==', firstName.trim()));
+      let residentSnapshot = await getDocs(firstExactQuery);
+
+      let residentMatch = null;
+      if (!residentSnapshot.empty) {
+        residentSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.password === password) {
+            residentMatch = { id: doc.id, ...data };
+          }
+        });
+      }
+
+      // Fallback: case-insensitive scan if no exact match
+      if (!residentMatch) {
+        const allResidents = await getDocs(residentsRef);
+        allResidents.forEach((doc) => {
+          const data = doc.data();
+          const firstLower = data.firstName ? String(data.firstName).trim().toLowerCase() : '';
+          if (firstLower === firstName.trim().toLowerCase() && data.password === password) {
+            residentMatch = { id: doc.id, ...data };
+          }
+        });
+      }
+
+      if (residentMatch) {
+        Alert.alert('Success', `Welcome, ${residentMatch.firstName}!`);
+        router.replace({
+          pathname: '/resident',
+          params: {
+            firstName: residentMatch.firstName,
+            purok: residentMatch.purok,
+            address: residentMatch.address,
+          }
+        });
+        return;
+      }
+
+      // Fall back to collector login
       const collectorData = await login(firstName, password);
       Alert.alert('Success', `Welcome back, ${collectorData.firstName}!`);
-      router.replace('/(tabs)/home');
+      router.replace('/collector/home');
     } catch (error) {
       Alert.alert('Login Error', error.message);
     } finally {
@@ -41,11 +78,16 @@ function LoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Logo */}
-      <RNImage source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
-      <View style={styles.form}>
-        <ThemedText type="title" style={styles.title}>Collector Login</ThemedText>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+    >
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        {/* Logo */}
+        <RNImage source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
+        <View style={styles.form}>
+        <ThemedText type="title" style={styles.title}>Login</ThemedText>
         <ThemedText style={styles.subtitle}>Please log in with your first name and password.</ThemedText>
         <InputField
           icon={<User size={22} color="#8BC500" />}
@@ -66,6 +108,7 @@ function LoginScreen() {
           onIconPress={() => setShowPassword((v) => !v)}
           style={styles.input}
         />
+      
         <PrimaryButton onPress={handleCollectorLogin} style={styles.button} disabled={loading}>
           {loading ? (
             <ActivityIndicator color="#fff" />
@@ -73,17 +116,22 @@ function LoginScreen() {
             <Text style={styles.buttonText}>Log In</Text>
           )}
         </PrimaryButton>
-        <TouchableOpacity onPress={() => router.push('/signup')}>
-          <ThemedText type="link" style={styles.link}>
-            Don`t have an account?
-          </ThemedText>
-        </TouchableOpacity>
-      </View>
-    </View>
+          <Text
+  style={styles.link}
+  onPress={() => router.replace('/signup')}
+>
+  Don`t have an account? Sign up here
+</Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#fff',

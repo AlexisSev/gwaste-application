@@ -1,189 +1,217 @@
 /* eslint-disable import/first */
+import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Image as RNImage,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 export const options = {
-  tabBarStyle: { display: 'none' },
   headerShown: false,
+  tabBarStyle: { display: "none" },
 };
 
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
-import { Lock, Phone, User } from 'lucide-react-native';
-import React, { useState } from 'react';
-import { ActivityIndicator, Alert, LogBox, Image as RNImage, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { ThemedText } from '../components/ThemedText';
-import InputField from '../components/ui/InputField';
-import PrimaryButton from '../components/ui/PrimaryButton';
-import { auth, db } from '../firebase';
-LogBox.ignoreAllLogs(); // Ignore all log notifications
+import { ThemedText } from "../components/ThemedText";
+import InputField from "../components/ui/InputField";
+import PrimaryButton from "../components/ui/PrimaryButton";
+import { db } from "../firebase";
 
-export default function SignupScreen() {
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [username, setUsername] = useState('');
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  // eslint-disable-next-line no-unused-vars
-  const [verificationId, setVerificationId] = useState('');
-  // eslint-disable-next-line no-unused-vars
-  const [verificationCode, setVerificationCode] = useState('');
-  // eslint-disable-next-line no-unused-vars
-  const [showOTPInput, setShowOTPInput] = useState(false);
-  // eslint-disable-next-line no-unused-vars
-  const [userType, setUserType] = useState('collector'); // Default to collector
+export default function ResidentSignup() {
   const router = useRouter();
 
-  const handleSendOTP = async () => {
-    if (!firstName || !lastName || !username || !phone || !password) {
-      Alert.alert('Error', 'Please fill in all fields.');
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [address, setAddress] = useState("");
+  const [purok, setPurok] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSignup = async () => {
+    if (
+      !firstName.trim() ||
+      !lastName.trim() ||
+      !address.trim() ||
+      !purok.trim() ||
+      !phone.trim()
+    ) {
+      Alert.alert(
+        "Missing info",
+        "Please fill out first name, last name, address, purok, and phone."
+      );
       return;
     }
-    
-    if (phone.length < 10) {
-      Alert.alert('Error', 'Please enter a valid phone number.');
+    if (!password.trim() || !confirmPassword.trim()) {
+      Alert.alert("Missing info", "Please enter and confirm your password.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert("Password mismatch", "Passwords do not match.");
       return;
     }
 
     setLoading(true);
     try {
-      // Format phone number for Firebase (add +1 for US, adjust for your country)
-      const formattedPhone = phone.startsWith('+') ? phone : `+1${phone}`;
-      
-      // For now, we'll use a simple approach with email-based auth
-      // since phone auth requires additional setup
-      const tempEmail = `${username}@collector.local`;
-      
-      // Create user with temporary email
-      const userCredential = await createUserWithEmailAndPassword(auth, tempEmail, password);
-      const user = userCredential.user;
-
-      // Store collector info in Firestore
-      await setDoc(doc(db, "collectors", user.uid), {
-        firstName,
-        lastName,
-        username,
-        phone: formattedPhone,
-        tempEmail, // Store the temp email for reference
-        userType: 'collector',
-        createdAt: new Date(),
-        driver: username, // Add driver field for admin dropdown
-        status: "active", // Add status field for admin dropdown
+      const combinedFullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+      await addDoc(collection(db, "residents"), {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        fullName: combinedFullName,
+        address: address.trim(),
+        purok: purok.trim(),
+        phone: phone.trim(),
+        password: password.trim(),
+        createdAt: serverTimestamp(),
       });
 
-      // Clear form
-      setFirstName('');
-      setLastName('');
-      setUsername('');
-      setPhone('');
-      setPassword('');
-
-      // Navigate to login or show success
-      Alert.alert('Success', 'Collector account created successfully! You can now login with your username and password.');
-      router.push('/login');
-    } catch (error) {
-      Alert.alert('Signup Error', error.message);
+      Alert.alert("Success", "Signup successful. You can now log in.");
+      router.replace("/login");
+    } catch (err) {
+      Alert.alert("Error", err?.message || "Could not complete signup.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      {/* Logo */}
-      <RNImage source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
-      <View style={styles.form}>
-        <ThemedText type="title" style={styles.title}>Create Collector Account</ThemedText>
-        <ThemedText style={styles.subtitle}>Fill your information below to register as a waste collector.</ThemedText>
-        <InputField
-          icon={<User size={22} color="#8BC500" />}
-          placeholder="First Name"
-          value={firstName}
-          onChangeText={setFirstName}
-          autoCapitalize="words"
-          autoCorrect={false}
-          style={styles.input}
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+    >
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Logo */}
+        <RNImage
+          source={require("../assets/images/logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
         />
-        <InputField
-          icon={<User size={22} color="#8BC500" />}
-          placeholder="Last Name"
-          value={lastName}
-          onChangeText={setLastName}
-          autoCapitalize="words"
-          autoCorrect={false}
-          style={styles.input}
-        />
-        <InputField
-          icon={<User size={22} color="#8BC500" />}
-          placeholder="Username"
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={styles.input}
-        />
-        <InputField
-          icon={<Phone size={22} color="#8BC500" />}
-          placeholder="Phone number"
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-          style={styles.input}
-        />
-        <InputField
-          icon={<Lock size={22} color="#8BC500" />}
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={!showPassword}
-          iconRight={<Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#8BC500" />}
-          onIconPress={() => setShowPassword((v) => !v)}
-          style={styles.input}
-        />
-        <PrimaryButton onPress={handleSendOTP} style={styles.button} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Create Collector Account</Text>
-          )}
-        </PrimaryButton>
-        <TouchableOpacity onPress={() => router.push('/login')}>
-          <ThemedText type="link" style={styles.link}>
-            Already have an account?
+
+        <View style={styles.form}>
+          <ThemedText type="title" style={styles.title}>
+            Sign Up
           </ThemedText>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+
+          <InputField
+            icon={<Feather name="user" size={20} color="#8BC500" />}
+            placeholder="First Name"
+            value={firstName}
+            onChangeText={setFirstName}
+            autoCapitalize="words"
+            autoCorrect={false}
+            style={styles.input}
+          />
+
+          <InputField
+            icon={<Feather name="user" size={20} color="#8BC500" />}
+            placeholder="Last Name"
+            value={lastName}
+            onChangeText={setLastName}
+            autoCapitalize="words"
+            autoCorrect={false}
+            style={styles.input}
+          />
+
+          <InputField
+            icon={<Feather name="map-pin" size={20} color="#8BC500" />}
+            placeholder="Address"
+            value={address}
+            onChangeText={setAddress}
+            style={styles.input}
+          />
+
+          <InputField
+            icon={<Feather name="home" size={20} color="#8BC500" />}
+            placeholder="Purok"
+            value={purok}
+            onChangeText={setPurok}
+            style={styles.input}
+          />
+
+          <InputField
+            icon={<Feather name="phone" size={20} color="#8BC500" />}
+            placeholder="Phone"
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            style={styles.input}
+          />
+
+          <InputField
+            icon={<Feather name="lock" size={20} color="#8BC500" />}
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={true}
+            style={styles.input}
+          />
+
+          <InputField
+            icon={<Feather name="lock" size={20} color="#8BC500" />}
+            placeholder="Confirm Password"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry={true}
+            style={styles.input}
+          />
+
+          <PrimaryButton
+            onPress={handleSignup}
+            style={styles.button}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Sign Up</Text>
+            )}
+          </PrimaryButton>
+
+          <Text style={styles.link} onPress={() => router.replace("/login")}>
+            Already have an account? Log in here
+          </Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   container: {
-    flexGrow: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 32,
+    flex: 1,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
   },
   logo: {
     width: 200,
     height: 90,
     marginBottom: 20,
   },
-  illustration: {
-    width: 150,
-    height: 120,
-    marginTop: 20,
-  },
   form: {
-    width: '85%',
+    width: "85%",
     maxWidth: 400,
-    alignItems: 'center',
-    backgroundColor: '#fff',
+    alignItems: "center",
+    backgroundColor: "#fff",
     borderRadius: 16,
     padding: 24,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
@@ -191,32 +219,31 @@ const styles = StyleSheet.create({
   },
   title: {
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   subtitle: {
     marginBottom: 24,
-    color: '#888',
-    textAlign: 'center',
+    color: "#888",
+    textAlign: "center",
   },
   input: {
-    width: '100%',
+    width: "100%",
     marginVertical: 8,
   },
   button: {
-    width: '100%',
+    width: "100%",
     marginVertical: 12,
     borderRadius: 12,
-    backgroundColor: '#458A3D',
+    backgroundColor: "#458A3D",
   },
   buttonText: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: "600",
+    color: "#fff",
   },
   link: {
-    color: '#8BC500',
+    color: "#8BC500",
     marginTop: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
-
-}); 
+});

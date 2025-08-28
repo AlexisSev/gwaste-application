@@ -5,15 +5,15 @@ import { Platform } from 'react-native';
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from '../../hooks/useColorScheme';
 
-export default function TabLayout() { 
+export default function CollectorTabLayout() { 
   const colorScheme = useColorScheme();
   const pathname = usePathname();
 
-  // List of routes where the tab bar should be hidden
   const hideTabBarRoutes = [
-    '/(tabs)/login',
-    '/(tabs)/signup',
-    '/(tabs)/landing',
+    '/collector/login',
+    '/collector/landing',
+    '/collector/signup',
+    '/resident/signup',
   ];
 
   const shouldHideTabBar = hideTabBarRoutes.includes(pathname);
@@ -26,9 +26,7 @@ export default function TabLayout() {
         tabBarStyle: shouldHideTabBar
           ? { display: 'none' }
           : Platform.select({
-              ios: {
-                position: 'absolute',
-              },
+              ios: { position: 'absolute' },
               default: {},
             }),
       }}>
@@ -60,3 +58,5 @@ export default function TabLayout() {
 function TabBarIcon(props) {
   return <Ionicons size={28} style={{ marginBottom: -3 }} {...props} />;
 }
+
+

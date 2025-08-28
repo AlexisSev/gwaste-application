@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { CollectorAuthProvider } from '../hooks/useCollectorAuth';
 import { useColorScheme } from '../hooks/useColorScheme';
+import { ResidentAuthProvider } from '../hooks/useResidentAuth';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -19,17 +20,19 @@ export default function RootLayout() {
 
   return (
     <CollectorAuthProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ResidentAuthProvider>
+      <ThemeProvider value={colorScheme === 'light' ? DarkTheme : DefaultTheme}>
         <Stack initialRouteName="index">
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="landing" options={{ title: 'Landing Page', headerShown: false }} />
           <Stack.Screen name="login" options={{ title: 'Log In', headerShown: false }} />
-          <Stack.Screen name="signup" options={{ title: 'Sign Up', headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="collector" options={{ headerShown: false }} />
           <Stack.Screen name="resident" options={{ headerShown: false }} />
+          <Stack.Screen name="signup" options={{ title: 'Sign Up', headerShown: false }} />
         </Stack>
         <StatusBar style="auto" />
       </ThemeProvider>
+      </ResidentAuthProvider>
     </CollectorAuthProvider>
   );
 }

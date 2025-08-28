@@ -17,7 +17,6 @@ export default function LandingScreen() {
   const router = useRouter();
   const { collector, logout } = useCollectorAuth();
 
-  // Helper function to convert 24-hour format to 12-hour format with AM/PM
   const formatTime = (timeString) => {
     if (!timeString) return '';
     try {
@@ -26,8 +25,9 @@ export default function LandingScreen() {
       const ampm = hour >= 12 ? 'PM' : 'AM';
       const displayHour = hour % 12 || 12;
       return `${displayHour}:${minutes} ${ampm}`;
+    // eslint-disable-next-line no-unused-vars
     } catch (error) {
-      return timeString; // Return original if parsing fails
+      return timeString;
     }
   };
 
@@ -36,26 +36,17 @@ export default function LandingScreen() {
       if (collector) {
         try {
           setDisplayName(collector.driver || collector.firstName || '');
-          
-          // Fetch assigned routes for this collector using driver field
           const routesQuery = query(collection(db, 'routes'), where('driver', '==', collector.driver));
           const routesSnapshot = await getDocs(routesQuery);
           setAssignedRoutes(routesSnapshot.size);
-          
-          // Process route data for schedule and areas
           let collectedCount = 0;
           let scheduleList = [];
           let routeNameList = [];
-          
           routesSnapshot.forEach(docSnap => {
             const data = docSnap.data();
-            
-            // Add route to route names
             if (data.route) {
               routeNameList.push(`Route ${data.route}`);
             }
-            
-            // Create schedule entry from route data
             if (data.time && data.areas && data.areas.length > 0) {
               const scheduleEntry = {
                 time: data.time,
@@ -68,20 +59,11 @@ export default function LandingScreen() {
               };
               scheduleList.push(scheduleEntry);
             }
-            
-            // Count collected areas if available
             if (data.collectedAreas) {
               collectedCount += data.collectedAreas.filter(a => a.driver === collector.driver).length;
             }
           });
-          
-          // Sort schedule by time
-          scheduleList.sort((a, b) => {
-            const timeA = new Date(`2000-01-01 ${a.time}`);
-            const timeB = new Date(`2000-01-01 ${b.time}`);
-            return timeA - timeB;
-          });
-          
+          scheduleList.sort((a, b) => new Date(`2000-01-01 ${a.time}`) - new Date(`2000-01-01 ${b.time}`));
           setAreasCollected(collectedCount);
           setTodaysSchedule(scheduleList);
           setRouteNames(routeNameList);
@@ -111,7 +93,6 @@ export default function LandingScreen() {
     router.replace('/login');
   };
 
-  // If no collector is authenticated, redirect to login
   if (!collector) {
     router.replace('/login');
     return null;
@@ -119,7 +100,6 @@ export default function LandingScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Fixed Header */}
       <View style={styles.header}>
         <View style={styles.logoContainer}>
           <Text style={styles.logoText}>Gwaste</Text>
@@ -151,9 +131,7 @@ export default function LandingScreen() {
         )}
       </View>
 
-      {/* Scrollable Content */}
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Greeting and Route Info */}
         <View style={styles.greetingSection}>
           {loading ? (
             <ActivityIndicator size="small" color="#8BC500" />
@@ -174,7 +152,6 @@ export default function LandingScreen() {
           </View>
         </View>
 
-        {/* Quick Actions */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Action</Text>
           <View style={styles.quickActionGrid}>
@@ -191,7 +168,6 @@ export default function LandingScreen() {
           </View>
         </View>
 
-        {/* Next Scheduled Stop */}
         <View style={styles.section}>
           <View style={styles.nextStopCard}>
             <View style={styles.nextStopInfo}>
@@ -211,9 +187,8 @@ export default function LandingScreen() {
           </View>
         </View>
 
-        {/* Today's Schedule */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today's Schedule:</Text>
+          <Text style={styles.sectionTitle}>Today`s Schedule:</Text>
           <View style={styles.scheduleList}>
             {todaysSchedule.length === 0 ? (
               <Text style={{ color: '#888', padding: 8 }}>No schedule for today.</Text>
@@ -241,245 +216,52 @@ export default function LandingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
+  container: { flex: 1, backgroundColor: '#f8f9fa' },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 1000,
-    elevation: 5,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16, backgroundColor: '#fff',
+    borderBottomWidth: 1, borderBottomColor: '#e0e0e0', position: 'absolute', top: 0, left: 0, right: 0,
+    zIndex: 1000, elevation: 5,
   },
-  scrollView: {
-    flex: 1,
-    marginTop: 81, // Height of header (20 + 16 + 45)
-  },
-  logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  logoText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#458A3D',
-  },
-  truckIcon: {
-    marginLeft: 8,
-  },
-  truckEmoji: {
-    fontSize: 20,
-  },
-  profileContainer: {
-    position: 'relative',
-  },
+  scrollView: { flex: 1, marginTop: 81 },
+  logoContainer: { flexDirection: 'row', alignItems: 'center' },
+  logoText: { fontSize: 24, fontWeight: 'bold', color: '#458A3D' },
+  truckIcon: { marginLeft: 8 },
+  truckEmoji: { fontSize: 20 },
+  profileContainer: { position: 'relative' },
   profileCircle: {
-    width: 45,
-    height: 45,
-    borderRadius: 22.5,
-    borderWidth: 2,
-    borderColor: '#8BC500',
-    overflow: 'hidden',
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 45, height: 45, borderRadius: 22.5, borderWidth: 2, borderColor: '#8BC500', overflow: 'hidden', backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center',
   },
-  profileImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 20,
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#4CAF50',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  greetingSection: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#fff',
-  },
-  greeting: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  routeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  routeText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 4,
-  },
-  section: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#458A3D',
-    marginBottom: 12,
-  },
-  quickActionGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  quickActionCard: {
-    width: '48%',
-    backgroundColor: '#E3F2E8',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  quickActionNumber: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#458A3D',
-    marginTop: 8,
-  },
-  quickActionLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  nextStopCard: {
-    backgroundColor: '#458A3D',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  nextStopInfo: {
-    flex: 1,
-  },
-  nextStopLabel: {
-    fontSize: 14,
-    color: '#fff',
-    marginBottom: 4,
-  },
-  nextStopLocation: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 2,
-  },
-  nextStopTime: {
-    fontSize: 16,
-    color: '#fff',
-  },
-  timeCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  timeText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#8BC500',
-    textAlign: 'center',
-  },
-  scheduleList: {
-    gap: 8,
-  },
-  scheduleItem: {
-    backgroundColor: '#E8F5E8',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    minHeight: 80,
-  },
-  scheduleTimeContainer: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    marginRight: 16,
-    minWidth: 80,
-  },
-  scheduleTime: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  scheduleEndTime: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  scheduleRoute: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-    fontWeight: '500',
-  },
-  scheduleLocationContainer: {
-    flex: 1,
-    alignItems: 'flex-start',
-  },
-  scheduleLocation: {
-    fontSize: 16,
-    color: '#333',
-    textAlign: 'left',
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  scheduleType: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 2,
-  },
-  scheduleFrequency: {
-    fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
-  },
-  dropdownMenu: {
-    position: 'absolute',
-    top: 60,
-    right: 0,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-    zIndex: 2000,
-    minWidth: 150,
-  },
-  dropdownItem: {
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  dropdownText: {
-    fontSize: 16,
-    color: '#333',
-  },
-}); 
+  profileImage: { width: '100%', height: '100%', borderRadius: 20 },
+  onlineIndicator: { position: 'absolute', bottom: 2, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: '#4CAF50', borderWidth: 2, borderColor: '#fff' },
+  greetingSection: { paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff' },
+  greeting: { fontSize: 24, fontWeight: 'bold', color: '#333', marginBottom: 8 },
+  routeInfo: { flexDirection: 'row', alignItems: 'center' },
+  routeText: { fontSize: 14, color: '#666', marginLeft: 4 },
+  section: { paddingHorizontal: 20, paddingVertical: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#458A3D', marginBottom: 12 },
+  quickActionGrid: { flexDirection: 'row', justifyContent: 'space-between' },
+  quickActionCard: { width: '48%', backgroundColor: '#E3F2E8', padding: 16, borderRadius: 12, alignItems: 'center' },
+  quickActionNumber: { fontSize: 32, fontWeight: 'bold', color: '#458A3D', marginTop: 8 },
+  quickActionLabel: { fontSize: 12, color: '#666', marginTop: 4, textAlign: 'center' },
+  nextStopCard: { backgroundColor: '#458A3D', borderRadius: 12, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  nextStopInfo: { flex: 1 },
+  nextStopLabel: { fontSize: 14, color: '#fff', marginBottom: 4 },
+  nextStopLocation: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 2 },
+  nextStopTime: { fontSize: 16, color: '#fff' },
+  timeCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' },
+  timeText: { fontSize: 12, fontWeight: 'bold', color: '#8BC500', textAlign: 'center' },
+  scheduleList: { gap: 8 },
+  scheduleItem: { backgroundColor: '#E8F5E8', borderRadius: 12, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', minHeight: 80 },
+  scheduleTimeContainer: { flexDirection: 'column', alignItems: 'flex-start', marginRight: 16, minWidth: 80 },
+  scheduleRoute: { fontSize: 12, color: '#666', marginTop: 4, fontWeight: '500' },
+  scheduleLocationContainer: { flex: 1, alignItems: 'flex-start' },
+  scheduleLocation: { fontSize: 16, color: '#333', textAlign: 'left', marginBottom: 4, fontWeight: '500' },
+  scheduleType: { fontSize: 14, color: '#666', marginBottom: 2 },
+  scheduleFrequency: { fontSize: 12, color: '#666', fontStyle: 'italic' },
+  dropdownMenu: { position: 'absolute', top: 60, right: 0, backgroundColor: '#fff', borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 5, zIndex: 2000, minWidth: 150 },
+  dropdownItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  dropdownText: { fontSize: 16, color: '#333' },
+});
+
+
