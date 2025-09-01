@@ -35,6 +35,8 @@ export default function ResidentSignup() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSignup = async () => {
     if (
@@ -154,7 +156,15 @@ export default function ResidentSignup() {
             placeholder="Password"
             value={password}
             onChangeText={setPassword}
-            secureTextEntry={true}
+            secureTextEntry={!showPassword}
+            iconRight={
+              <Feather 
+                name={showPassword ? "eye-off" : "eye"} 
+                size={20} 
+                color="#8BC500" 
+              />
+            }
+            onIconPress={() => setShowPassword(!showPassword)}
             style={styles.input}
           />
 
@@ -163,7 +173,15 @@ export default function ResidentSignup() {
             placeholder="Confirm Password"
             value={confirmPassword}
             onChangeText={setConfirmPassword}
-            secureTextEntry={true}
+            secureTextEntry={!showConfirmPassword}
+            iconRight={
+              <Feather 
+                name={showConfirmPassword ? "eye-off" : "eye"} 
+                size={20} 
+                color="#8BC500" 
+              />
+            }
+            onIconPress={() => setShowConfirmPassword(!showConfirmPassword)}
             style={styles.input}
           />
 
@@ -179,8 +197,11 @@ export default function ResidentSignup() {
             )}
           </PrimaryButton>
 
-          <Text style={styles.link} onPress={() => router.replace("/login")}>
-            Already have an account? Log in here
+          <Text style={styles.link}>
+            Already have an account?{" "}
+            <Text style={styles.linkText} onPress={() => router.replace("/login")}>
+              Log in here
+            </Text>
           </Text>
         </View>
       </ScrollView>
@@ -242,8 +263,11 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   link: {
-    color: "#8BC500",
+    color: "#666",
     marginTop: 8,
     textAlign: "center",
+  },
+  linkText: {
+    color: "#87CEEB",
   },
 });

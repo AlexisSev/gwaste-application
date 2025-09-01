@@ -116,12 +116,12 @@ function LoginScreen() {
             <Text style={styles.buttonText}>Log In</Text>
           )}
         </PrimaryButton>
-          <Text
-  style={styles.link}
-  onPress={() => router.replace('/signup')}
->
-  Don`t have an account? Sign up here
-</Text>
+          <Text style={styles.link}>
+            Don't have an account?{" "}
+            <Text style={styles.linkText} onPress={() => router.replace('/signup')}>
+              Sign up here
+            </Text>
+          </Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -182,9 +182,12 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   link: {
-    color: '#8BC500',
+    color: '#666',
     marginTop: 8,
     textAlign: 'center',
+  },
+  linkText: {
+    color: '#87CEEB',
   },
 });
 
