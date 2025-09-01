@@ -43,7 +43,7 @@ export default function ResidentIndex() {
     if (!residentData) {
       loadResidentData();
     }
-  }, [params.firstName, params.purok, params.address]);
+  }, [params.firstName, params.purok, params.address, residentData]);
 
   // Handle missing data case
   if (!residentData) {
@@ -135,7 +135,7 @@ export default function ResidentIndex() {
             <FontAwesome5 name="map-marker-alt" size={20} color="#666" />
             <View style={styles.addressContainer}>
               <Text style={styles.purok}>
-                Purok {residentData?.purok || 'Loading...'}
+                {residentData?.purok || 'Loading...'}
               </Text>
               <Text style={styles.location}>
                 {residentData?.address || 'Loading...'}
@@ -188,19 +188,34 @@ export default function ResidentIndex() {
       </ScrollView>
 
       <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem}>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident')}
+        >
           <FontAwesome5 name="home" size={24} color="#4CAF50" />
           <Text style={[styles.navText, styles.activeNav]}>Home</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/map')}
+        >
           <FontAwesome5 name="map-marked-alt" size={24} color="#666" />
           <Text style={styles.navText}>Map</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/schedule')}
+        >
           <FontAwesome5 name="calendar-alt" size={24} color="#666" />
           <Text style={styles.navText}>Schedule</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/categorize')}
+        >
           <FontAwesome5 name="list" size={24} color="#666" />
           <Text style={styles.navText}>Categorize</Text>
         </TouchableOpacity>

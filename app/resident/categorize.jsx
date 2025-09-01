@@ -1,6 +1,7 @@
-import { Feather } from '@expo/vector-icons';
+import { Feather, FontAwesome5 } from '@expo/vector-icons';
+
+import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React from 'react';
 import { FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -70,8 +71,40 @@ export default function CategorizeScreen() {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Bottom spacer for tab bar */}
-      <View style={{ height: 100 }} />
+      {/* Bottom navigation */}
+      <View style={styles.bottomNav}>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident')}
+        >
+          <FontAwesome5 name="home" size={24} color="#666" />
+          <Text style={styles.navText}>Home</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/map')}
+        >
+          <FontAwesome5 name="map-marked-alt" size={24} color="#666" />
+          <Text style={styles.navText}>Map</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/schedule')}
+        >
+          <FontAwesome5 name="calendar-alt" size={24} color="#666" />
+          <Text style={styles.navText}>Schedule</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/categorize')}
+        >
+          <FontAwesome5 name="list" size={24} color="#4CAF50" />
+          <Text style={[styles.navText, styles.activeNav]}>Categorize</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -158,6 +191,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     fontWeight: '600',
+  },
+  bottomNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E5ECD9',
+    elevation: 5,
+  },
+  navItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  navText: {
+    fontSize: 10,
+    color: '#666',
+    marginTop: 4,
+  },
+  activeNav: {
+    color: '#4CAF50',
+    fontWeight: '700',
   },
 });
 

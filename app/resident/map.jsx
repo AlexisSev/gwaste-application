@@ -1,7 +1,6 @@
-import { Feather } from '@expo/vector-icons';
+import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -80,6 +79,40 @@ export default function MapScreen() {
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
+
+      <View style={styles.bottomNav}>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident')}
+        >
+          <FontAwesome5 name="home" size={24} color="#666" />
+          <Text style={styles.navText}>Home</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/map')}
+        >
+          <FontAwesome5 name="map-marked-alt" size={24} color="#4CAF50" />
+          <Text style={[styles.navText, styles.activeNav]}>Map</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/schedule')}
+        >
+          <FontAwesome5 name="calendar-alt" size={24} color="#666" />
+          <Text style={styles.navText}>Schedule</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/categorize')}
+        >
+          <FontAwesome5 name="list" size={24} color="#666" />
+          <Text style={styles.navText}>Categorize</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -250,6 +283,25 @@ const styles = StyleSheet.create({
   },
   bottomSpacing: {
     height: 8,
+  },
+  bottomNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: 12,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  navItem: {
+    alignItems: 'center',
+  },
+  navText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
+  activeNav: {
+    color: '#4CAF50',
   },
 });
 

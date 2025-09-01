@@ -1,6 +1,7 @@
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+// eslint-disable-next-line import/namespace
 import { ThemedView } from '../../components/ThemedView';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import { Colors } from '../../constants/Colors';
@@ -64,11 +65,13 @@ export default function ScheduleScreen() {
       const ampm = hour >= 12 ? 'PM' : 'AM';
       const displayHour = hour % 12 || 12;
       return `${displayHour}:${minutes} ${ampm}`;
+    // eslint-disable-next-line no-unused-vars
     } catch (error) {
       return timeString;
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchDriverRoutes(); }, [collector]);
 
   const fetchDriverRoutes = async () => {
