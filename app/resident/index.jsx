@@ -5,7 +5,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth, db } from '../../firebase';
-//comment
+//commenttttt
 export default function ResidentIndex() {
   const params = useLocalSearchParams();
   const [residentData, setResidentData] = useState(null);
