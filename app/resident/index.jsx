@@ -1,7 +1,8 @@
-import { FontAwesome5 } from '@expo/vector-icons';
+
+import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth, db } from '../../firebase';
@@ -10,10 +11,97 @@ export default function ResidentIndex() {
   const params = useLocalSearchParams();
   const [residentData, setResidentData] = useState(null);
   const [isDropdownVisible, setIsDropdownVisible] = useState(false);
+  const [scheduleData, setScheduleData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const formatTime = (timeString) => {
+    if (!timeString) return '';
+    try {
+      const [hours, minutes] = timeString.split(':');
+      const hour = parseInt(hours);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour % 12 || 12;
+      return `${displayHour}:${minutes} ${ampm}`;
+    } catch (_error) {
+      return timeString;
+    }
+  };
 
   useEffect(() => {
+    const fetchCollectionSchedule = async () => {
+      try {
+        // Get routes that include the resident's area
+        const routesQuery = query(collection(db, 'routes'));
+        const routesSnapshot = await getDocs(routesQuery);
+        
+        const allPickups = [];
+        const today = new Date();
+        
+        routesSnapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          console.log('Route data:', data);
+          console.log('Route areas:', data.areas);
+          console.log('Resident purok:', residentData?.purok);
+          
+          // Check if this route includes the resident's area
+          if (data.areas && data.areas.some(area => 
+            area && (
+              area.toLowerCase().includes('malata') || 
+              area.toLowerCase().includes(residentData?.purok?.toLowerCase() || '') ||
+              data.type?.toLowerCase().includes('malata')
+            )
+          )) {
+            console.log('Found matching route:', data);
+            const frequency = data.frequency?.toLowerCase() || '';
+            
+            // Check next 7 days for pickup schedule
+            for (let i = 0; i < 7; i++) {
+              const checkDate = new Date(today);
+              checkDate.setDate(today.getDate() + i);
+              const dayName = checkDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+              
+              const isScheduled = frequency.includes(dayName) || 
+                                frequency.includes('daily') || 
+                                frequency.includes('every day') ||
+                                frequency.includes('every ' + dayName) ||
+                                (frequency.includes('weekday') && checkDate.getDay() >= 1 && checkDate.getDay() <= 5);
+              
+              if (isScheduled && data.time) {
+                allPickups.push({
+                  time: formatTime(data.time),
+                  rawTime: data.time,
+                  date: checkDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
+                  fullDate: checkDate,
+                  location: data.areas.join(', '),
+                  type: data.type || 'Biodegradable',
+                  routeNumber: data.route,
+                  daysDiff: i
+                });
+              }
+            }
+          }
+        });
+        
+        // Sort by date and time, get the earliest upcoming pickup
+        allPickups.sort((a, b) => {
+          if (a.daysDiff !== b.daysDiff) return a.daysDiff - b.daysDiff;
+          const timeA = new Date(`2000-01-01 ${a.rawTime}`);
+          const timeB = new Date(`2000-01-01 ${b.rawTime}`);
+          return timeA - timeB;
+        });
+        
+        const nextPickup = allPickups.length > 0 ? allPickups[0] : null;
+        console.log('All pickups found:', allPickups);
+        console.log('Next pickup selected:', nextPickup);
+        setScheduleData(nextPickup);
+      } catch (error) {
+        console.error('Error fetching collection schedule:', error);
+      }
+    };
+
     const loadResidentData = async () => {
       try {
+        setLoading(true);
         // First check if we have data from params
         if (params.firstName && params.purok && params.address) {
           setResidentData({
@@ -21,36 +109,39 @@ export default function ResidentIndex() {
             purok: params.purok,
             address: params.address
           });
-          return;
-        }
-
-        // If no params, try to get data from Firebase
-        const user = auth.currentUser;
-        if (user) {
-          const residentRef = doc(db, 'residents', user.uid);
-          const residentSnap = await getDoc(residentRef);
-          
-          if (residentSnap.exists()) {
-            setResidentData(residentSnap.data());
+        } else {
+          // If no params, try to get data from Firebase
+          const user = auth.currentUser;
+          if (user) {
+            const residentRef = doc(db, 'residents', user.uid);
+            const residentSnap = await getDoc(residentRef);
+            
+            if (residentSnap.exists()) {
+              setResidentData(residentSnap.data());
+            }
           }
         }
+        
+        // Fetch collection schedule data
+        await fetchCollectionSchedule();
       } catch (error) {
         console.error('Error loading resident data:', error);
         Alert.alert('Error', 'Could not load resident data');
+      } finally {
+        setLoading(false);
       }
     };
 
-    if (!residentData) {
-      loadResidentData();
-    }
-  }, [params.firstName, params.purok, params.address, residentData]);
+    loadResidentData();
+  }, [params.firstName, params.purok, params.address, residentData?.purok]);
 
-  // Handle missing data case
-  if (!residentData) {
+
+  // Handle loading state
+  if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <Text>Loading resident data...</Text>
+          <Text>Loading...</Text>
         </View>
       </SafeAreaView>
     );
@@ -131,9 +222,9 @@ export default function ResidentIndex() {
           <Text style={styles.greeting}>
             {getGreeting()} {residentData?.firstName || 'Resident'}!
           </Text>
-          <View style={styles.locationContainer}>
-            <FontAwesome5 name="map-marker-alt" size={20} color="#666" />
-            <View style={styles.addressContainer}>
+                     <View style={styles.locationContainer}>
+             <Feather name="map-pin" size={20} color="#666" />
+             <View style={styles.addressContainer}>
               <Text style={styles.purok}>
                 {residentData?.purok || 'Loading...'}
               </Text>
@@ -145,14 +236,18 @@ export default function ResidentIndex() {
 
           <View style={styles.scheduleCard}>
             <Text style={styles.scheduleTitle}>Collection Schedule:</Text>
-            <View style={styles.nextPickup}>
-              <View style={styles.wasteTypeIcon}>
-                <FontAwesome5 name="recycle" size={24} color="#4CAF50" />
-              </View>
-              <View>
+                         <View style={styles.nextPickup}>
+               <View style={styles.wasteTypeIcon}>
+                 <Feather name="refresh-cw" size={24} color="#4CAF50" />
+               </View>
+               <View>
                 <Text style={styles.pickupLabel}>Next Pickup</Text>
-                <Text style={styles.pickupDate}>July 10, 7:00 AM</Text>
-                <Text style={styles.wasteType}>Biodegradable</Text>
+                <Text style={styles.pickupDate}>
+                  {scheduleData ? `${scheduleData.date}, ${scheduleData.time}` : 'No pickup scheduled'}
+                </Text>
+                <Text style={styles.wasteType}>
+                  {scheduleData ? scheduleData.type : 'N/A'}
+                </Text>
               </View>
             </View>
           </View>
@@ -163,7 +258,7 @@ export default function ResidentIndex() {
               <Text style={styles.truckText}>Truck is</Text>
               <Text style={styles.truckDistance}>1km away</Text>
             </View>
-            <TouchableOpacity style={styles.viewMapButton}>
+            <TouchableOpacity style={styles.viewMapButton} onPress={() => router.push('/resident/map')}>
               <Text style={styles.viewMapText}>View on Map</Text>
             </TouchableOpacity>
           </View>
@@ -186,40 +281,6 @@ export default function ResidentIndex() {
           </View>
         </View>
       </ScrollView>
-
-      <View style={styles.bottomNav}>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => router.push('/resident')}
-        >
-          <FontAwesome5 name="home" size={24} color="#4CAF50" />
-          <Text style={[styles.navText, styles.activeNav]}>Home</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => router.push('/resident/map')}
-        >
-          <FontAwesome5 name="map-marked-alt" size={24} color="#666" />
-          <Text style={styles.navText}>Map</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => router.push('/resident/schedule')}
-        >
-          <FontAwesome5 name="calendar-alt" size={24} color="#666" />
-          <Text style={styles.navText}>Schedule</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => router.push('/resident/categorize')}
-        >
-          <FontAwesome5 name="list" size={24} color="#666" />
-          <Text style={styles.navText}>Categorize</Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }
@@ -349,25 +410,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
-  bottomNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    padding: 12,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-  },
-  navItem: {
-    alignItems: 'center',
-  },
-  navText: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
-  activeNav: {
-    color: '#4CAF50',
-  },
+
   dropdownMenu: {
     position: 'absolute',
     top: 60,

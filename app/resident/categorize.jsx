@@ -1,6 +1,5 @@
-import { Feather, FontAwesome5 } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 
-import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -36,18 +35,18 @@ export default function CategorizeScreen() {
       <View style={styles.cardIconWrap}>
         <Image source={categoryImages[item.id]} style={styles.cardImage} resizeMode="contain" />
       </View>
-      <Text numberOfLines={2} style={[styles.cardLabel, { color: colors.text }]}>{item.label}</Text>
+      <Text numberOfLines={2} style={[styles.cardLabel, { color: '#4CAF50' }]}>{item.label}</Text>
     </TouchableOpacity>
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: '#F6F7E8' }]}>
       <StatusBar style="auto" />
 
       {/* Hero Header */}
       <View style={styles.hero}>
         <Text style={[styles.heroTitle, { color: colors.primary }]}>Waste Sorting Guide</Text>
-        <Text style={styles.heroSubtitle}>See which bin each item goes to based{"\n"}on its category.</Text>
+        <Text style={[styles.heroSubtitle, { color: colors.primary }]}>See which bin each item goes to based{"\n"}on its category.</Text>
       </View>
 
       {/* Search Bar */}
@@ -70,41 +69,6 @@ export default function CategorizeScreen() {
         columnWrapperStyle={{ justifyContent: 'space-between' }}
         showsVerticalScrollIndicator={false}
       />
-
-      {/* Bottom navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => router.push('/resident')}
-        >
-          <FontAwesome5 name="home" size={24} color="#666" />
-          <Text style={styles.navText}>Home</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => router.push('/resident/map')}
-        >
-          <FontAwesome5 name="map-marked-alt" size={24} color="#666" />
-          <Text style={styles.navText}>Map</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => router.push('/resident/schedule')}
-        >
-          <FontAwesome5 name="calendar-alt" size={24} color="#666" />
-          <Text style={styles.navText}>Schedule</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => router.push('/resident/categorize')}
-        >
-          <FontAwesome5 name="list" size={24} color="#4CAF50" />
-          <Text style={[styles.navText, styles.activeNav]}>Categorize</Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }
@@ -133,7 +97,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   heroSubtitle: {
-    color: '#7E8A7E',
     fontSize: 12,
     lineHeight: 18,
   },
@@ -192,29 +155,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '600',
   },
-  bottomNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#E5ECD9',
-    elevation: 5,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  navText: {
-    fontSize: 10,
-    color: '#666',
-    marginTop: 4,
-  },
-  activeNav: {
-    color: '#4CAF50',
-    fontWeight: '700',
-  },
+
 });
 
 
