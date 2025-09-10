@@ -31,8 +31,12 @@ export default function CategorizeScreen() {
     { id: 'ewaste', label: 'E-Waste' },
   ];
 
+  const handlePressCategory = (id) => {
+    router.push({ pathname: '/resident/categorize/[id]', params: { id } });
+  };
+
   const renderItem = ({ item }) => (
-    <TouchableOpacity style={styles.gridItem}>
+    <TouchableOpacity style={styles.gridItem} onPress={() => handlePressCategory(item.id)}>
       <View style={styles.cardIconWrap}>
         <Image source={categoryImages[item.id]} style={styles.cardImage} resizeMode="contain" />
       </View>
@@ -216,5 +220,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+
 
 

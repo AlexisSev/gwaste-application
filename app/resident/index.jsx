@@ -217,7 +217,7 @@ export default function ResidentIndex() {
           onPress={() => router.push('/resident/categorize')}
         >
           <FontAwesome5 name="list" size={24} color="#666" />
-          <Text style={styles.navText}>Categorize</Text>
+          <Text style={styles.navText}>Sorting Guide</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
