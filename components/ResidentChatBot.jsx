@@ -2,6 +2,7 @@ import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from './ThemedText';
+// eslint-disable-next-line import/namespace
 import { ThemedView } from './ThemedView';
 
 export default function ResidentChatBot() {
@@ -19,29 +20,32 @@ export default function ResidentChatBot() {
     if (listRef.current) listRef.current.scrollToEnd({ animated: true });
   }, []);
 
-  async function getGeminiResponseLocal(p) {
-    const BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
-    const GEMINI_PROXY_URL = `${BASE_URL}/api/gemini`;
-    const controller = new AbortController();
-    const TIMEOUT_MS = 15000;
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    try {
-      const res = await fetch(GEMINI_PROXY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: p }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      if (!res.ok) {
-        throw new Error(`Bad response: ${res.status}`);
-      }
-      const data = await res.json();
-      return data?.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not respond.';
-    } catch (err) {
-      clearTimeout(timeoutId);
-      throw err;
+  function getLocalResponse(prompt) {
+    const lowerPrompt = prompt.toLowerCase();
+    
+    // Simple keyword-based responses
+    if (lowerPrompt.includes('schedule') || lowerPrompt.includes('pickup')) {
+      return 'Waste collection happens every Tuesday and Friday from 7 AM to 5 PM. Please place your bins at the curb by 6:30 AM.';
     }
+    
+    if (lowerPrompt.includes('sort') || lowerPrompt.includes('recycle') || lowerPrompt.includes('categorize')) {
+      return 'Here\'s how to sort your waste:\n• Blue bin: Paper, cardboard, metal cans\n• Green bin: Food scraps, yard waste\n• Black bin: Non-recyclable items\n• Special items: Electronics and batteries go to collection centers';
+    }
+    
+    if (lowerPrompt.includes('report') || lowerPrompt.includes('problem') || lowerPrompt.includes('issue')) {
+      return 'To report issues:\n1. Use the map feature to mark problem areas\n2. Call our hotline: (555) 123-WASTE\n3. Email: support@gwaste.com\n4. Use the in-app reporting tool';
+    }
+    
+    if (lowerPrompt.includes('help') || lowerPrompt.includes('what can you do')) {
+      return 'I can help you with:\n• Waste collection schedules\n• Sorting and recycling guidelines\n• Reporting issues or problems\n• Finding collection centers\n• General waste management questions';
+    }
+    
+    if (lowerPrompt.includes('hello') || lowerPrompt.includes('hi') || lowerPrompt.includes('hey')) {
+      return 'Hello! I\'m your waste management assistant. How can I help you today?';
+    }
+    
+    // Default response
+    return 'I understand you\'re asking about: "' + prompt + '". I can help with schedules, sorting, reporting, or general waste management questions. Could you be more specific?';
   }
 
   const handleSend = useCallback(async () => {
@@ -54,20 +58,14 @@ export default function ResidentChatBot() {
     setMessages(prev => [...prev, userMessage]);
     requestAnimationFrame(scrollToEnd);
 
-    try {
-      const reply = await getGeminiResponseLocal(prompt);
+    // Simulate a brief delay for better UX
+    setTimeout(() => {
+      const reply = getLocalResponse(prompt);
       const assistantMessage = { id: `${Date.now()}-assistant`, role: 'assistant', text: reply };
       setMessages(prev => [...prev, assistantMessage]);
       requestAnimationFrame(scrollToEnd);
-    } catch (e) {
-      const errorText = e?.name === 'AbortError'
-        ? 'The request timed out. Please check your connection and try again.'
-        : 'Sorry, something went wrong. Please try again.';
-      const errorMessage = { id: `${Date.now()}-error`, role: 'assistant', text: errorText };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
       setSending(false);
-    }
+    }, 500);
   }, [input, sending, scrollToEnd]);
 
   return (
