@@ -1,9 +1,8 @@
-/* eslint-disable no-unused-vars */
-import { Feather } from '@expo/vector-icons';
+ import { Feather } from '@expo/vector-icons';
 
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { FlatList, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors } from '../../constants/Colors';
@@ -13,14 +12,14 @@ export default function CategorizeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
-  // Static image map (place your files with these exact names under assets/images)
+  // Static image map for each category
   const categoryImages = {
-    recyclable: require('../../assets/images/icon.png'),
-    biodegradable: require('../../assets/images/icon.png'),
-    hazardous: require('../../assets/images/icon.png'),
-    residual: require('../../assets/images/icon.png'),
-    nonbio: require('../../assets/images/icon.png'),
-    ewaste: require('../../assets/images/icon.png'),
+    recyclable: require('../../assets/images/recyclable.png'),
+    biodegradable: require('../../assets/images/paper.png'),
+    hazardous: require('../../assets/images/battery.png'),
+    residual: require('../../assets/images/waste.png'),
+    nonbio: require('../../assets/images/non-biodegradable.png'),
+    ewaste: require('../../assets/images/phone.png'),
   };
 
   const categories = [
@@ -171,8 +170,9 @@ const styles = StyleSheet.create({
     borderColor: '#E6E6D1',
   },
   cardIconWrap: {
-    width: 88,
-    height: 62,
+    width: '90%',
+    height: undefined,
+    aspectRatio: 88/62,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -180,8 +180,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   cardImage: {
-    width: 72,
-    height: 48,
+    width: '70%',
+    height: undefined,
+    aspectRatio: 72/48,
   },
   cardLabel: {
     fontSize: 12,

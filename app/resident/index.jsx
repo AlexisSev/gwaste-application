@@ -2,12 +2,14 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { Feather } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth, db } from '../../firebase';
+import { supabase } from '../../services/supabaseClient';
 
 export default function ResidentIndex() {
   const params = useLocalSearchParams();
@@ -19,6 +21,10 @@ export default function ResidentIndex() {
   const [collectedAreas, setCollectedAreas] = useState(new Set());
   const [notifications, setNotifications] = useState([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
+  const [hasLocationPermission, setHasLocationPermission] = useState(false);
+  const [userLocation, setUserLocation] = useState(null);
+  const [nearestDistanceKm, setNearestDistanceKm] = useState(null);
+  const [distanceLoading, setDistanceLoading] = useState(true);
 
   const formatTime = (timeString) => {
     if (!timeString) return '';
@@ -46,11 +52,28 @@ export default function ResidentIndex() {
       
       const collectionsSnapshot = await getDocs(collectionsQuery);
       const collectedSet = new Set();
+      const collectedAtByArea = new Map();
       
       collectionsSnapshot.forEach(doc => {
         const data = doc.data();
         if (data.area) {
           collectedSet.add(data.area);
+          // Prefer explicit collectedAt timestamp if present
+          let ts = null;
+          if (data.collectedAt?.seconds) {
+            ts = new Date(data.collectedAt.seconds * 1000).toISOString();
+          } else if (typeof data.collectedAt === 'string') {
+            ts = data.collectedAt;
+          } else if (data.timestamp) {
+            // fallback to numeric timestamp if provided
+            ts = new Date(Number(data.timestamp)).toISOString();
+          }
+          if (ts) {
+            // Only set once to avoid "moving" timestamps
+            if (!collectedAtByArea.has(data.area)) {
+              collectedAtByArea.set(data.area, ts);
+            }
+          }
         }
       });
       
@@ -58,11 +81,16 @@ export default function ResidentIndex() {
       
       // Update schedule items with collection status
       setTodaysSchedule(prevSchedule => 
-        prevSchedule.map(item => ({
-          ...item,
-          collected: collectedSet.has(item.location),
-          collectedAt: collectedSet.has(item.location) ? new Date().toISOString() : null
-        }))
+        prevSchedule.map(item => {
+          const isCollected = collectedSet.has(item.location);
+          if (!isCollected) {
+            return { ...item, collected: false, collectedAt: null };
+          }
+          // Preserve existing collectedAt if already set; otherwise use value from DB map
+          const existing = item.collectedAt || null;
+          const fromDb = collectedAtByArea.get(item.location) || null;
+          return { ...item, collected: true, collectedAt: existing || fromDb };
+        })
       );
       
     } catch (error) {
@@ -104,6 +132,103 @@ export default function ResidentIndex() {
       return unsubscribe;
     } catch (error) {
       console.error('Error loading notifications:', error);
+    }
+  };
+
+  // Calculate distance in kilometers between two coordinates
+  const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Get active collectors (updated within last 2 minutes)
+  const getActiveCollectors = (collectors) => {
+    const now = Date.now();
+    return (collectors || []).filter(c => {
+      if (!c?.updated_at) return false;
+      const diff = now - new Date(c.updated_at).getTime();
+      return diff < 2 * 60 * 1000;
+    });
+  };
+
+  // Fetch collectors and compute nearest distance to user
+  const updateNearestTruckDistance = async (currentLoc) => {
+    try {
+      const { data, error } = await supabase.from('locations').select('*');
+      if (error) throw error;
+      const active = getActiveCollectors(data);
+      if (!currentLoc || active.length === 0) {
+        setNearestDistanceKm(null);
+        setDistanceLoading(false);
+        return;
+      }
+      let minKm = Infinity;
+      active.forEach(c => {
+        if (c.latitude && c.longitude) {
+          const km = calculateDistanceKm(currentLoc.latitude, currentLoc.longitude, c.latitude, c.longitude);
+          if (km < minKm) minKm = km;
+        }
+      });
+      setNearestDistanceKm(Number.isFinite(minKm) ? minKm : null);
+    } catch (_e) {
+      setNearestDistanceKm(null);
+    } finally {
+      setDistanceLoading(false);
+    }
+  };
+
+  // Request location permission and get current location
+  useEffect(() => {
+    const initLocation = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setHasLocationPermission(false);
+          setDistanceLoading(false);
+          return;
+        }
+        setHasLocationPermission(true);
+        const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const coords = { latitude: current.coords.latitude, longitude: current.coords.longitude };
+        setUserLocation(coords);
+        updateNearestTruckDistance(coords);
+      } catch (_e) {
+        setDistanceLoading(false);
+      }
+    };
+    initLocation();
+  }, []);
+
+  // Periodically refresh nearest distance (every 20s)
+  useEffect(() => {
+    if (!hasLocationPermission || !userLocation) return;
+    const id = setInterval(() => {
+      updateNearestTruckDistance(userLocation);
+    }, 20000);
+    return () => clearInterval(id);
+  }, [hasLocationPermission, userLocation]);
+
+  const handleEnableLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setHasLocationPermission(false);
+        return;
+      }
+      setHasLocationPermission(true);
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coords = { latitude: current.coords.latitude, longitude: current.coords.longitude };
+      setUserLocation(coords);
+      setDistanceLoading(true);
+      updateNearestTruckDistance(coords);
+    } catch (_e) {
+      // ignore
     }
   };
 
@@ -166,9 +291,9 @@ export default function ResidentIndex() {
         
         routesSnapshot.forEach(docSnap => {
           const data = docSnap.data();
-          console.log('Route data:', data);
-          console.log('Route areas:', data.areas);
-          console.log('Resident purok:', residentData?.purok);
+          // console.log('Route data:', data);
+          // console.log('Route areas:', data.areas);
+          // console.log('Resident purok:', residentData?.purok);
           
           // Check if this route includes the resident's area
           if (data.areas && data.areas.some(area => 
@@ -178,7 +303,7 @@ export default function ResidentIndex() {
               data.type?.toLowerCase().includes('malata')
             )
           )) {
-            console.log('Found matching route:', data);
+            // console.log('Found matching route:', data);
             const frequency = data.frequency?.toLowerCase() || '';
             
             // Check if today is scheduled
@@ -204,7 +329,8 @@ export default function ResidentIndex() {
                   dayOff: data.dayOff,
                   areaIndex: interval.index,
                   collected: false,
-                  collectedAt: null
+                  collectedAt: null,
+                  driver: data.driver || null
                 };
                 todaySchedule.push(scheduleEntry);
               });
@@ -251,9 +377,9 @@ export default function ResidentIndex() {
         });
         
         const nextPickup = allPickups.length > 0 ? allPickups[0] : null;
-        console.log('All pickups found:', allPickups);
-        console.log('Next pickup selected:', nextPickup);
-        console.log('Today schedule:', todaySchedule);
+        // console.log('All pickups found:', allPickups);
+        // console.log('Next pickup selected:', nextPickup);
+        // console.log('Today schedule:', todaySchedule);
         setScheduleData(nextPickup);
         setScheduleLoading(false);
       } catch (error) {
@@ -420,10 +546,22 @@ export default function ResidentIndex() {
           <View style={styles.mapPreview}>
             {/* Map preview component would go here */}
             <View style={styles.truckInfo}>
-              <Text style={styles.truckText}>Truck is</Text>
-              <Text style={styles.truckDistance}>1km away</Text>
+              {!hasLocationPermission ? (
+                <TouchableOpacity onPress={handleEnableLocation} activeOpacity={0.8}>
+                  <Text style={styles.truckDistance}>Enable location</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <Text style={styles.truckText}>Truck is</Text>
+                  <Text style={styles.truckDistance}>
+                    {distanceLoading ? '...'
+                      : nearestDistanceKm == null ? 'N/A'
+                      : `${nearestDistanceKm < 1 ? Math.round(nearestDistanceKm * 1000) + 'm' : nearestDistanceKm.toFixed(1) + 'km'} away`}
+                  </Text>
+                </>
+              )}
             </View>
-            <TouchableOpacity style={styles.viewMapButton} onPress={() => router.push('/resident/map')}>
+            <TouchableOpacity style={styles.viewMapButton} onPress={() => router.push({ pathname: '/resident/map', params: { pickupType: scheduleData?.type || '', driver: scheduleData?.driver || '' } })}>
               <Text style={styles.viewMapText}>View on Map</Text>
             </TouchableOpacity>
           </View>
@@ -692,6 +830,7 @@ const styles = StyleSheet.create({
   scheduleTimeContainer: {
     width: 90,
     flexDirection: 'column',
+    marginRight: 12,
   },
   scheduleTime: {
     fontSize: 16,
@@ -708,6 +847,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1B5E20',
     flex: 1,
+    lineHeight: 22,
+    marginBottom: 2,
   },
   // New styles for Today's Schedule functionality
   scheduleItemCollected: {

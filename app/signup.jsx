@@ -14,6 +14,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { vw } from "../utils/responsive";
 export const options = {
   headerShown: false,
   tabBarStyle: { display: "none" },
@@ -221,8 +222,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   logo: {
-    width: 200,
-    height: 90,
+    width: Math.min(vw(55), 240),
+    height: undefined,
+    aspectRatio: 200/90,
     marginBottom: 20,
   },
   form: {

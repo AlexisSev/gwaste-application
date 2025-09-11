@@ -18,7 +18,7 @@ export default function ScheduleScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [expandedIds, setExpandedIds] = useState(new Set([1])); // Default expand Route 1
+  const [selectedRouteId, setSelectedRouteId] = useState(null);
 
   useEffect(() => {
     fetchRoutes();
@@ -83,7 +83,7 @@ export default function ScheduleScreen() {
 
       setRoutes(filtered);
       if (filtered.length > 0) {
-        setExpandedIds(new Set([filtered[0].id]));
+        setSelectedRouteId(filtered[0].id);
       }
     } catch (error) {
       console.error('Error fetching routes:', error);
@@ -125,11 +125,7 @@ export default function ScheduleScreen() {
     }
   };
 
-  const toggle = (id) => {
-    const next = new Set(expandedIds);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    setExpandedIds(next);
-  };
+  const selectedRoute = routes.find(r => r.id === selectedRouteId) || null;
 
   const handleHomePress = () => {
     router.push('/resident');
@@ -155,97 +151,88 @@ export default function ScheduleScreen() {
       <StatusBar style="auto" />
       <View style={styles.hero}>
         <Text style={[styles.heroTitle, { color: colors.primary }]}>Collection Schedule</Text>
+        {/* {selectedRoute && (
+          <Text style={styles.heroSubtitle}>
+            {selectedRoute.route ? `Route ${selectedRoute.route}` : 'Route'} • {selectedRoute.type || 'Waste Collection'}
+          </Text>
+        )} */}
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-        {routes.length === 0 ? (
+        {routes.length === 0 && (
           <View style={styles.noRoutesContainer}>
             <Text style={styles.noRoutesText}>No routes available</Text>
           </View>
-        ) : (
-          routes.map((route) => (
-            <View key={route.id} style={styles.card}> 
-              <TouchableOpacity style={styles.cardHeader} onPress={() => toggle(route.id)}>
-                <Text style={[styles.cardTitle, { color: colors.primary }]}>
-                  {route.route ? `Route ${route.route}` : `Route ${route.id}`}
-                </Text>
-                <Feather 
-                  name={expandedIds.has(route.id) ? "chevron-up" : "chevron-right"} 
-                  size={20} 
-                  color={colors.primary} 
-                />
-              </TouchableOpacity>
+        )}
 
-              {expandedIds.has(route.id) && (
-                <View style={styles.cardBody}>
-                  {route.time && route.endTime ? (
-                    <>
-                      <View style={styles.infoRow}>
-                        <Feather name="clock" size={16} color={colors.primary} />
-                        <Text style={styles.infoText}>
-                          Start: {formatSingleTime(route.time)}
-                        </Text>
-                      </View>
-                      <View style={styles.infoRow}>
-                        <Feather name="clock" size={16} color={colors.primary} />
-                        <Text style={styles.infoText}>
-                          End: {formatSingleTime(route.endTime)}
-                        </Text>
-                      </View>
-                    </>
-                  ) : route.time ? (
-                    <View style={styles.infoRow}>
-                      <Feather name="clock" size={16} color={colors.primary} />
-                      <Text style={styles.infoText}>
-                        Time: {formatSingleTime(route.time)}
+        {routes.length > 1 && (
+          <View style={styles.selectorRow}>
+            {routes.map(r => (
+              <TouchableOpacity
+                key={r.id}
+                style={[
+                  styles.selectorChip,
+                  r.id === selectedRouteId && { backgroundColor: colors.primary }
+                ]}
+                onPress={() => setSelectedRouteId(r.id)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.selectorText, r.id === selectedRouteId && { color: '#fff' }]}>
+                  {r.route ? `Route ${r.route}` : 'Route'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {selectedRoute && (
+          <View style={styles.detailCard}>
+            <View style={styles.detailHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.detailTitle, { color: colors.primary }]}>
+                  {selectedRoute.route ? `Route ${selectedRoute.route}` : 'Route'}
+                </Text>
+                <Text style={styles.detailSubtitle}>
+                  {selectedRoute.type || 'Waste Collection'} • {selectedRoute.frequency || 'Schedule'}
+                </Text>
+              </View>
+              <View style={styles.timePill}>
+                <Feather name="clock" size={14} color="#fff" />
+                <Text style={styles.timePillText}>
+                  {formatSingleTime(selectedRoute.time)} - {formatSingleTime(selectedRoute.endTime)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Driver and Crew */}
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.driverLabel}>Driver: <Text style={styles.driverValue}>{selectedRoute.driver || '—'}</Text></Text>
+              {Array.isArray(selectedRoute.crew) && selectedRoute.crew.length > 0 && (
+                <View style={styles.crewRow}>
+                  {selectedRoute.crew.map((member, idx) => (
+                    <View key={idx} style={styles.crewChip}>
+                      <Text style={styles.crewChipText}>
+                        {typeof member === 'string' ? member : `${member?.firstName || ''} ${member?.lastName || ''}`.trim() || 'Crew'}
                       </Text>
                     </View>
-                  ) : (
-                    <View style={styles.infoRow}>
-                      <Feather name="clock" size={16} color={colors.primary} />
-                      <Text style={styles.infoText}>Time not specified</Text>
-                    </View>
-                  )}
-
-                  <View style={styles.infoRow}>
-                    <Feather name="refresh-ccw" size={16} color={colors.primary} />
-                    <Text style={styles.infoText}>Type: {route.type || 'Waste Collection'}</Text>
-                  </View>
-
-                  <View style={styles.infoRow}>
-                    <Feather name="calendar" size={16} color={colors.primary} />
-                    <Text style={styles.infoText}>Frequency: {route.frequency || 'Not specified'}</Text>
-                  </View>
-
-                  {route.crew && route.crew.length > 0 && (
-                    <View style={styles.infoRow}>
-                      <Feather name="users" size={16} color={colors.primary} />
-                      <Text style={styles.infoText}>Crew: {route.crew.join(', ')}</Text>
-                    </View>
-                  )}
-
-                  {route.areas && route.areas.length > 0 && (
-                    <>
-                      <Text style={styles.sectionLabel}>Areas:</Text>
-                      <View style={styles.barangayRow}>
-                        <View style={styles.barangayList}>
-                          {route.areas.map((area) => (
-                            <Text key={area} style={styles.barangayText}>{area}</Text>
-                          ))}
-                        </View>
-                        <TouchableOpacity 
-                          style={[styles.fullBtn, { backgroundColor: colors.primary }]}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={styles.fullBtnText}>View Full Schedule</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </>
-                  )}
+                  ))}
                 </View>
               )}
             </View>
-          ))
+
+            {Array.isArray(selectedRoute.areas) && selectedRoute.areas.length > 0 ? (
+              <View style={styles.areaList}>
+                {selectedRoute.areas.map((area, idx) => (
+                  <View key={`${area}-${idx}`} style={styles.areaItem}>
+                    <View style={styles.areaBadge}><Text style={styles.areaBadgeText}>{idx + 1}</Text></View>
+                    <Text style={styles.areaName}>{area}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.noRoutesText}>No areas listed for this route.</Text>
+            )}
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -269,21 +256,34 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5ECD9',
   },
   heroTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '800',
     marginBottom: 6,
   },
   heroSubtitle: {
     color: '#7E8A7E',
-    fontSize: 12,
+    fontSize: 14,
   },
   content: {
     padding: 16,
   },
-  card: {
+  selectorRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  selectorChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#E6F2E6',
+  },
+  selectorText: { color: '#2E7D32', fontWeight: '600', fontSize: 16 },
+  detailCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    marginBottom: 12,
+    padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
@@ -292,60 +292,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#EEEEEE',
   },
-  cardHeader: {
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  cardBody: {
-    borderTopWidth: 1,
-    borderTopColor: '#EDEDED',
-    padding: 16,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-    gap: 8,
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#1F2937',
-  },
-  sectionLabel: {
-    color: '#3F8B3C',
-    fontWeight: '700',
-    marginTop: 0,
-    marginBottom: 2,
-  },
-  barangayRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  barangayList: {
-    flex: 1,
-  },
-  barangayText: {
-    fontSize: 14,
-    marginBottom: 0,
-    color: '#4B5563',
-  },
-  fullBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
-  },
-  fullBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  detailHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  detailTitle: { fontSize: 22, fontWeight: '800' },
+  detailSubtitle: { fontSize: 14, color: '#6B7280', marginTop: 2 },
+  timePill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#4CAF50', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, gap: 6 },
+  timePillText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  driverLabel: { fontSize: 14, color: '#374151', marginBottom: 6 },
+  driverValue: { fontWeight: '700', color: '#1F2937' },
+  crewRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  crewChip: { backgroundColor: '#E8F5E9', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
+  crewChipText: { fontSize: 12, color: '#2E7D32', fontWeight: '600' },
+  areaList: { gap: 8 },
+  areaItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F6F7E8', borderRadius: 10, padding: 12 },
+  areaBadge: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#E3F2E8', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  areaBadgeText: { color: '#2E7D32', fontWeight: '700', fontSize: 14 },
+  areaName: { fontSize: 16, color: '#1F2937', fontWeight: '600' },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -365,6 +326,6 @@ const styles = StyleSheet.create({
   },
   noRoutesText: {
     color: '#7E8A7E',
-    fontSize: 16,
+    fontSize: 18,
   },
 });

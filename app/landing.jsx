@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { Image as RNImage, StyleSheet, Text, View } from 'react-native';
 import PrimaryButton from '../components/ui/PrimaryButton';
+import { vw } from '../utils/responsive';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -52,8 +53,8 @@ const styles = StyleSheet.create({
     paddingTop: 0,
   },
   logo: {
-    width: 250,
-    height: 100,
+    width: Math.min(vw(60), 280),
+    height: Math.min(vw(24), 120),
   },
   tagline: {
     fontSize: 16,
@@ -70,8 +71,9 @@ const styles = StyleSheet.create({
     paddingTop: 0,
   },
   illustration: {
-    width: 350,
-    height: 290,
+    width: Math.min(vw(88), 420),
+    height: undefined,
+    aspectRatio: 350/290,
   },
   buttonSection: {
     paddingBottom: 40,

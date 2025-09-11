@@ -9,6 +9,7 @@ import InputField from '../components/ui/InputField';
 import PrimaryButton from '../components/ui/PrimaryButton';
 import { db } from '../firebase';
 import { useCollectorAuth } from '../hooks/useCollectorAuth';
+import { vw } from '../utils/responsive';
 
 function LoginScreen() {
   const [firstName, setFirstName] = useState('');
@@ -140,8 +141,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   logo: {
-    width: 200,
-    height: 90,
+    width: Math.min(vw(55), 240),
+    height: undefined,
+    aspectRatio: 200/90,
     marginBottom: 20,
   },
   form: {

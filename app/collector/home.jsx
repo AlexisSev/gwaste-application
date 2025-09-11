@@ -689,7 +689,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#2E7D32',
     borderColor: '#1B5E20'
   },
-  scheduleTimeContainer: { flexDirection: 'column', alignItems: 'flex-start', marginRight: 16, minWidth: 100 },
+  scheduleTimeContainer: { flexDirection: 'column', alignItems: 'flex-start', marginRight: 16, minWidth: 110 },
   scheduleTime: { fontSize: 14, color: '#458A3D', fontWeight: 'bold', marginBottom: 2 },
   scheduleTimeCollected: { color: '#E8F5E8' },
   scheduleRoute: { fontSize: 12, color: '#666', marginTop: 2, fontWeight: '500' },
