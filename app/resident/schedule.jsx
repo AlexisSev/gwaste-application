@@ -1,12 +1,13 @@
-import { Feather, FontAwesome5 } from '@expo/vector-icons';
+/* eslint-disable no-unused-vars */
+import { Feather } from '@expo/vector-icons';
 
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { router } from 'expo-router';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { Colors } from '../../constants/Colors';
 import { auth, db } from '../../firebase';
 import { useColorScheme } from '../../hooks/useColorScheme';
@@ -15,43 +16,114 @@ import { useColorScheme } from '../../hooks/useColorScheme';
 export default function ScheduleScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-
-  const routes = [
-    {
-      id: 1,
-      title: 'Route 1',
-      time: '7:00AM - 3:00PM',
-      kind: 'Biodegradable (MALATA)',
-      frequency: 'DAILY',
-      barangays: ['Cantecson', 'Gairan', 'Nailon', 'Siocon'],
-    },
-    {
-      id: 2,
-      title: 'Route 2',
-      time: '8:00AM - 4:00PM',
-      kind: 'Non-Biodegradable',
-      frequency: 'WEEKLY',
-      barangays: ['Sambag', 'Tubod', 'Looc'],
-    },
-    {
-      id: 3,
-      title: 'Route 3',
-      time: '6:00AM - 2:00PM',
-      kind: 'Recyclable',
-      frequency: 'WEEKLY',
-      barangays: ['Poblacion', 'San Jose', 'Santo Niño'],
-    },
-    {
-      id: 4,
-      title: 'Route 4',
-      time: '9:00AM - 5:00PM',
-      kind: 'Mixed Waste',
-      frequency: 'WEEKLY',
-      barangays: ['San Vicente', 'San Roque', 'San Miguel'],
-    },
-  ];
-
+  const [routes, setRoutes] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [expandedIds, setExpandedIds] = useState(new Set([1])); // Default expand Route 1
+
+  useEffect(() => {
+    fetchRoutes();
+  }, []);
+
+  const fetchRoutes = async () => {
+    try {
+      setLoading(true);
+      const routesRef = collection(db, 'routes');
+      const querySnapshot = await getDocs(routesRef);
+      const routesData = [];
+      querySnapshot.forEach((doc) => { 
+        routesData.push({ id: doc.id, ...doc.data() }); 
+      });
+      
+      // Sort routes by route number in ascending order
+      routesData.sort((a, b) => {
+        const routeA = parseInt(a.route) || 0;
+        const routeB = parseInt(b.route) || 0;
+        return routeA - routeB;
+      });
+
+      // Fetch resident address and filter routes to only the matching one(s)
+      const user = auth.currentUser;
+      let filtered = routesData;
+      if (user) {
+        try {
+          const residentRef = doc(db, 'residents', user.uid);
+          const residentSnap = await getDoc(residentRef);
+          const address = residentSnap.exists() ? (residentSnap.data()?.address || '') : '';
+          const purok = residentSnap.exists() ? (residentSnap.data()?.purok || '') : '';
+          const normalize = (s) => (s || '')
+            .toString()
+            .toLowerCase()
+            .replace(/\b(address|barangay|purok|street|st\.?|road|rd\.?|avenue|ave\.?)\b/g, '')
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          const addrNorm = normalize(address);
+          const purokNorm = normalize(purok);
+          const tokens = new Set([addrNorm, purokNorm].filter(Boolean));
+
+          const areaMatchesResident = (area) => {
+            const a = normalize(area);
+            if (!a) return false;
+            // exact or containment either way
+            for (const t of tokens) {
+              if (!t) continue;
+              if (a === t) return true;
+              if (t.length >= 3 && (t.includes(a) || a.includes(t))) return true;
+            }
+            return false;
+          };
+
+          if (tokens.size > 0) {
+            filtered = routesData.filter(r => Array.isArray(r.areas) && r.areas.some(areaMatchesResident));
+          }
+        } catch (e) {
+          // If anything fails, fall back to original list
+        }
+      }
+
+      setRoutes(filtered);
+      if (filtered.length > 0) {
+        setExpandedIds(new Set([filtered[0].id]));
+      }
+    } catch (error) {
+      console.error('Error fetching routes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const formatTime = (timeString) => {
+    if (!timeString) return '';
+    try {
+      // Handle time range format (e.g., "7:00-15:00" or "7:00-3:00PM")
+      if (timeString.includes('-')) {
+        const [startTime, endTime] = timeString.split('-');
+        const formattedStart = formatSingleTime(startTime.trim());
+        const formattedEnd = formatSingleTime(endTime.trim());
+        return `${formattedStart} - ${formattedEnd}`;
+      }
+      // Handle single time format
+      return formatSingleTime(timeString);
+    } catch (error) {
+      return timeString;
+    }
+  };
+
+  const formatSingleTime = (timeStr) => {
+    if (!timeStr) return '';
+    try {
+      // Remove any existing AM/PM
+      const cleanTime = timeStr.replace(/[AP]M/i, '').trim();
+      const [hours, minutes] = cleanTime.split(':');
+      const hour = parseInt(hours);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour % 12 || 12;
+      return `${displayHour}:${minutes || '00'} ${ampm}`;
+    } catch (error) {
+      return timeStr;
+    }
+  };
 
   const toggle = (id) => {
     const next = new Set(expandedIds);
@@ -59,85 +131,122 @@ export default function ScheduleScreen() {
     setExpandedIds(next);
   };
 
-  const handleHomePress = async () => {
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        router.push('/login');
-        return;
-      }
-
-      const residentRef = doc(db, 'residents', user.uid);
-      const residentSnap = await getDoc(residentRef);
-      
-      if (residentSnap.exists()) {
-        const data = residentSnap.data();
-        router.push({
-          pathname: '/resident',
-          params: data
-        });
-      }
-    } catch (error) {
-      console.error('Error:', error);
-      router.push('/resident');
-    }
+  const handleHomePress = () => {
+    router.push('/resident');
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar style="auto" />
+        <View style={styles.hero}>
+          <Text style={[styles.heroTitle, { color: colors.primary }]}>Collection Schedule</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading routes...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="auto" />
       <View style={styles.hero}>
         <Text style={[styles.heroTitle, { color: colors.primary }]}>Collection Schedule</Text>
-        <Text style={styles.heroSubtitle}>Your Location: Purok Rosal, Barangay Gairan</Text>
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-        {routes.map((route) => (
-          <View key={route.id} style={styles.card}> 
-            <TouchableOpacity style={styles.cardHeader} onPress={() => toggle(route.id)}>
-              <Text style={[styles.cardTitle, { color: colors.primary }]}>{route.title}</Text>
-              <Feather 
-                name={expandedIds.has(route.id) ? "chevron-up" : "chevron-right"} 
-                size={20} 
-                color={colors.primary} 
-              />
-            </TouchableOpacity>
-
-            {expandedIds.has(route.id) && (
-              <View style={styles.cardBody}>
-                <View style={styles.infoRow}>
-                  <Feather name="clock" size={16} color={colors.primary} />
-                  <Text style={styles.infoText}>{route.time}</Text>
-                </View>
-
-                <View style={styles.infoRow}>
-                  <Feather name="refresh-ccw" size={16} color={colors.primary} />
-                  <Text style={styles.infoText}>Kind: {route.kind}</Text>
-                </View>
-
-                <View style={styles.infoRow}>
-                  <Feather name="calendar" size={16} color={colors.primary} />
-                  <Text style={styles.infoText}>Frequency: {route.frequency}</Text>
-                </View>
-
-                <Text style={styles.sectionLabel}>Barangays:</Text>
-                <View style={styles.barangayRow}>
-                  <View style={styles.barangayList}>
-                    {route.barangays?.map((b) => (
-                      <Text key={b} style={styles.barangayText}>{b}</Text>
-                    ))}
-                  </View>
-                  <TouchableOpacity 
-                    style={[styles.fullBtn, { backgroundColor: colors.primary }]}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.fullBtnText}>View Full Schedule</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+        {routes.length === 0 ? (
+          <View style={styles.noRoutesContainer}>
+            <Text style={styles.noRoutesText}>No routes available</Text>
           </View>
-        ))}
+        ) : (
+          routes.map((route) => (
+            <View key={route.id} style={styles.card}> 
+              <TouchableOpacity style={styles.cardHeader} onPress={() => toggle(route.id)}>
+                <Text style={[styles.cardTitle, { color: colors.primary }]}>
+                  {route.route ? `Route ${route.route}` : `Route ${route.id}`}
+                </Text>
+                <Feather 
+                  name={expandedIds.has(route.id) ? "chevron-up" : "chevron-right"} 
+                  size={20} 
+                  color={colors.primary} 
+                />
+              </TouchableOpacity>
+
+              {expandedIds.has(route.id) && (
+                <View style={styles.cardBody}>
+                  {route.time && route.endTime ? (
+                    <>
+                      <View style={styles.infoRow}>
+                        <Feather name="clock" size={16} color={colors.primary} />
+                        <Text style={styles.infoText}>
+                          Start: {formatSingleTime(route.time)}
+                        </Text>
+                      </View>
+                      <View style={styles.infoRow}>
+                        <Feather name="clock" size={16} color={colors.primary} />
+                        <Text style={styles.infoText}>
+                          End: {formatSingleTime(route.endTime)}
+                        </Text>
+                      </View>
+                    </>
+                  ) : route.time ? (
+                    <View style={styles.infoRow}>
+                      <Feather name="clock" size={16} color={colors.primary} />
+                      <Text style={styles.infoText}>
+                        Time: {formatSingleTime(route.time)}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.infoRow}>
+                      <Feather name="clock" size={16} color={colors.primary} />
+                      <Text style={styles.infoText}>Time not specified</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.infoRow}>
+                    <Feather name="refresh-ccw" size={16} color={colors.primary} />
+                    <Text style={styles.infoText}>Type: {route.type || 'Waste Collection'}</Text>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Feather name="calendar" size={16} color={colors.primary} />
+                    <Text style={styles.infoText}>Frequency: {route.frequency || 'Not specified'}</Text>
+                  </View>
+
+                  {route.crew && route.crew.length > 0 && (
+                    <View style={styles.infoRow}>
+                      <Feather name="users" size={16} color={colors.primary} />
+                      <Text style={styles.infoText}>Crew: {route.crew.join(', ')}</Text>
+                    </View>
+                  )}
+
+                  {route.areas && route.areas.length > 0 && (
+                    <>
+                      <Text style={styles.sectionLabel}>Areas:</Text>
+                      <View style={styles.barangayRow}>
+                        <View style={styles.barangayList}>
+                          {route.areas.map((area) => (
+                            <Text key={area} style={styles.barangayText}>{area}</Text>
+                          ))}
+                        </View>
+                        <TouchableOpacity 
+                          style={[styles.fullBtn, { backgroundColor: colors.primary }]}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.fullBtnText}>View Full Schedule</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </View>
+              )}
+            </View>
+          ))
+        )}
       </ScrollView>
 
       <View style={styles.bottomNav}>
@@ -245,8 +354,8 @@ const styles = StyleSheet.create({
   sectionLabel: {
     color: '#3F8B3C',
     fontWeight: '700',
-    marginTop: 6,
-    marginBottom: 8,
+    marginTop: 0,
+    marginBottom: 2,
   },
   barangayRow: {
     flexDirection: 'row',
@@ -258,7 +367,7 @@ const styles = StyleSheet.create({
   },
   barangayText: {
     fontSize: 14,
-    marginBottom: 4,
+    marginBottom: 0,
     color: '#4B5563',
   },
   fullBtn: {
@@ -271,25 +380,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  bottomNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#E5ECD9',
-    backgroundColor: '#fff',
-  },
-  navItem: {
+  loadingContainer: {
     flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 20,
   },
-  navText: {
-    fontSize: 12,
-    color: '#666',
+  loadingText: {
+    color: '#7E8A7E',
+    fontSize: 16,
+    marginTop: 10,
   },
-  activeNav: {
-    color: '#4CAF50',
-    fontWeight: '700',
+  noRoutesContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  noRoutesText: {
+    color: '#7E8A7E',
+    fontSize: 16,
   },
 });

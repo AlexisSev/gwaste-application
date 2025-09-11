@@ -1,50 +1,37 @@
-# Welcome to your Expo app 👋
+# 🚛  G-WASTE: A SMART WASTE COLLECTION SYSTEM WITH GPS TECHNOLOGY FOR REAL-TIME TRACKING
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
-## Get started
+This project aims to develop the **G-Waste** system to help residents, operations managers, and garbage collectors by ensuring timely garbage collection, convenient scheduling, proper waste categorization, and improved communication through real-time notifications.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+1. **Real-time Location Tracking**  
+   Provide real-time tracking of garbage trucks, allowing residents to know when collection services are on the way.  
 
-2. Start the app
+2. **Real-time Notifications**  
+   Offer notifications on actual pick-ups in specific areas to keep residents informed of collection status.  
 
-   ```bash
-   npx expo start
-   ```
+3. **Dynamic Scheduling for Operations Managers**  
+   Allow managers to **create, update, and delete collection schedules**, making temporary adjustments when needed.  
 
-In the output, you'll find options to open the app in a
+4. **AI-powered Predictive Analysis**  
+   Use Artificial Intelligence to analyze waste patterns, volume trends, and operational data, automatically adjusting collection schedules for efficiency.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🛠️ Tech Stack
+- **Frontend (Mobile):** React Native (Expo) + Leaflet (WebView for Maps)  
+- **Backend:** Supabase (Postgres + Row Level Security) & Firebase (Auth + Firestore)  
+- **Storage:** Supabase Storage (for images, reports, and documents)  
+- **AI/ML:** Predictive analysis for waste collection patterns  
+- **Maps & Geolocation:** OpenStreetMap (Leaflet), OSRM (Routing), Expo Location
 
-## Get a fresh project
+---
 
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## 📱 Key Features
+- 🚛 **Real-time Truck Tracking** – Residents can see garbage trucks moving on the map.  
+- 🔔 **Push Notifications/SMS** – Notify users when a truck is nearby or a schedule is updated.  
+- 📅 **Dynamic Scheduling** – Managers can add, update, or delete routes in real time.  
+- 🧠 **AI-powered Predictions** – Smarter collection scheduling based on data patterns.  
+- 💬 **Chatbot Support** – Residents can ask for info, get waste management tips, or report issues.  
+- 📸 **Report with Proof** – Residents can upload images when reporting missed pickups or issues.

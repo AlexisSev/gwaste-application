@@ -1,17 +1,36 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable no-unused-vars */
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { db } from '../../firebase';
 import { useCollectorAuth } from '../../hooks/useCollectorAuth';
+import { supabase } from '../../services/supabaseClient';
 
-const { width } = Dimensions.get('window');
+export default function CollectorMapScreen() {
+  const [location, setLocation] = useState(null);
+  const [hasLocationPermission, setHasLocationPermission] = useState(false);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [logs, setLogs] = useState([]); 
+  const [mapInitialized, setMapInitialized] = useState(false);
+  const [todaysSchedule, setTodaysSchedule] = useState([]);
+  const [currentArea, setCurrentArea] = useState(null);
+  const [nextArea, setNextArea] = useState(null);
+  const [collectedAreas, setCollectedAreas] = useState(new Set());
+  const webviewRef = useRef(null);
+  const MAP_HEIGHT = Math.round(Dimensions.get('window').height * 0.55);
+  const { collector, loading: authLoading } = useCollectorAuth();
+  const router = useRouter();
 
-export default function MapScreen() {
-  const [routes, setRoutes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedRoute, setSelectedRoute] = useState(null);
-  const { collector } = useCollectorAuth();
+  const defaultLocation = {
+    latitude: 8.4542,
+    longitude: 124.6319,
+    latitudeDelta: 0.01,
+    longitudeDelta: 0.01,
+  };
 
   const formatTime = (timeString) => {
     if (!timeString) return '';
@@ -26,165 +45,522 @@ export default function MapScreen() {
     }
   };
 
-  useEffect(() => { fetchDriverRoutes(); }, [collector]);
-
-  const fetchDriverRoutes = async () => {
-    if (!collector) return;
+  const generateTimeIntervals = (startTime, endTime, areas) => {
+    if (!startTime || !endTime || !areas || areas.length === 0) return [];
+    
     try {
-      setLoading(true);
-      const routesRef = collection(db, 'routes');
-      const q = query(routesRef, where('driver', '==', collector.driver));
-      const querySnapshot = await getDocs(q);
-      const routesData = [];
-      querySnapshot.forEach((doc) => { routesData.push({ id: doc.id, ...doc.data() }); });
-      setRoutes(routesData);
-      if (routesData.length > 0) setSelectedRoute(routesData[0]);
+      const start = new Date(`2000-01-01 ${startTime}`);
+      const end = new Date(`2000-01-01 ${endTime}`);
+      const totalMinutes = (end - start) / (1000 * 60);
+      
+      // Calculate interval based on number of areas (1-1.5 hours per area)
+      const intervalMinutes = Math.max(60, Math.min(90, Math.floor(totalMinutes / areas.length)));
+      
+      const intervals = [];
+      let currentTime = new Date(start);
+      
+      areas.forEach((area, index) => {
+        const intervalEnd = new Date(currentTime.getTime() + intervalMinutes * 60000);
+        
+        // Don't exceed the end time
+        if (intervalEnd > end) {
+          intervalEnd.setTime(end.getTime());
+        }
+        
+        intervals.push({
+          area: area,
+          startTime: currentTime.toTimeString().slice(0, 5),
+          endTime: intervalEnd.toTimeString().slice(0, 5),
+          index: index + 1
+        });
+        
+        currentTime = new Date(intervalEnd);
+        
+        // Stop if we've reached the end time
+        if (currentTime >= end) return;
+      });
+      
+      return intervals;
     } catch (error) {
-      console.error('Error fetching routes:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error generating time intervals:', error);
+      return areas.map((area, index) => ({
+        area: area,
+        startTime: startTime,
+        endTime: endTime,
+        index: index + 1
+      }));
     }
   };
 
-  const renderMarkers = () => {
-    if (!selectedRoute) return null;
-    const markers = [];
-    markers.push(
-      <Marker key="city-hall" coordinate={{ latitude: 11.046419171933303, longitude: 123.97920466105226 }} title="Bogo City Hall">
-        <Text style={{ fontSize: 32 }}>🚛</Text>
-      </Marker>
-    );
-    if (selectedRoute.coordinates && Array.isArray(selectedRoute.coordinates)) {
-      selectedRoute.coordinates.forEach((coord, index) => {
-        if (coord && (coord.latitude || coord.lat) && (coord.longitude || coord.lng)) {
-          markers.push(
-            <Marker
-              key={`area-${index}`}
-              coordinate={{ latitude: coord.latitude || coord.lat, longitude: coord.longitude || coord.lng }}
-              title={selectedRoute.areas && selectedRoute.areas[index] ? selectedRoute.areas[index] : `Area ${index + 1}`}
-              pinColor="#458A3D"
-            />
-          );
+  const loadScheduleData = async () => {
+    if (!collector?.driver) return;
+
+    try {
+      const routesQuery = query(collection(db, 'routes'), where('driver', '==', collector.driver));
+      const routesSnapshot = await getDocs(routesQuery);
+      
+      let scheduleList = [];
+      routesSnapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.time && data.areas && data.areas.length > 0) {
+          // Generate time intervals for each area
+          const timeIntervals = generateTimeIntervals(data.time, data.endTime, data.areas);
+          
+          // Create schedule entries for each time interval
+          timeIntervals.forEach(interval => {
+            const scheduleEntry = {
+              time: interval.startTime,
+              endTime: interval.endTime,
+              location: interval.area,
+              routeNumber: data.route,
+              type: data.type || 'Waste Collection',
+              frequency: data.frequency,
+              dayOff: data.dayOff,
+              areaIndex: interval.index
+            };
+            scheduleList.push(scheduleEntry);
+          });
         }
       });
+      
+      scheduleList.sort((a, b) => new Date(`2000-01-01 ${a.time}`) - new Date(`2000-01-01 ${b.time}`));
+      setTodaysSchedule(scheduleList);
+      
+      // Determine current and next areas based on current time
+      updateCurrentAndNextAreas(scheduleList);
+      
+    } catch (error) {
+      console.error('Error loading schedule data:', error);
     }
-    return markers;
   };
 
-  const renderRouteLine = () => {
-    if (!selectedRoute || !selectedRoute.coordinates) return null;
-    let coordinates = [];
-    if (Array.isArray(selectedRoute.coordinates)) {
-      coordinates = selectedRoute.coordinates
-        .filter(coord => coord && (coord.latitude || coord.lat) && (coord.longitude || coord.lng))
-        .map(coord => ({ latitude: coord.latitude || coord.lat, longitude: coord.longitude || coord.lng }));
-    } else if (typeof selectedRoute.coordinates === 'object') {
-      coordinates = Object.values(selectedRoute.coordinates)
-        .filter(coord => coord && (coord.latitude || coord.lat) && (coord.longitude || coord.lng))
-        .map(coord => ({ latitude: coord.latitude || coord.lat, longitude: coord.longitude || coord.lng }));
+  const updateCurrentAndNextAreas = (schedule) => {
+    if (!schedule || schedule.length === 0) {
+      setCurrentArea(null);
+      setNextArea(null);
+      return;
     }
-    coordinates.unshift({ latitude: 11.046419171933303, longitude: 123.97920466105226 });
-    if (coordinates.length < 2) return null;
-    return <Polyline coordinates={coordinates} strokeColor="#458A3D" strokeWidth={4} lineDashPattern={[8, 4]} zIndex={1} />;
+
+    const now = new Date();
+    const currentTime = now.toTimeString().slice(0, 5);
+    
+    // Find current area (if we're within its time range)
+    let current = null;
+    let next = null;
+    
+    for (let i = 0; i < schedule.length; i++) {
+      const item = schedule[i];
+      const isCollected = collectedAreas.has(item.location);
+      
+      if (!isCollected) {
+        if (!current && currentTime >= item.time && currentTime <= item.endTime) {
+          current = item;
+        } else if (!next && currentTime < item.time) {
+          next = item;
+          break;
+        }
+      }
+    }
+    
+    // If no current area found, the next uncollected area becomes next
+    if (!current && !next) {
+      const uncollectedAreas = schedule.filter(item => !collectedAreas.has(item.location));
+      if (uncollectedAreas.length > 0) {
+        next = uncollectedAreas[0];
+      }
+    }
+    
+    setCurrentArea(current);
+    setNextArea(next);
   };
 
-  if (loading) {
+  // Load schedule data when collector is available
+  useEffect(() => {
+    if (collector && !authLoading) {
+      loadScheduleData();
+    }
+  }, [collector, authLoading]);
+
+  // Update current and next areas every minute
+  useEffect(() => {
+    if (todaysSchedule.length > 0) {
+      updateCurrentAndNextAreas(todaysSchedule);
+      
+      const interval = setInterval(() => {
+        updateCurrentAndNextAreas(todaysSchedule);
+      }, 60000); // Update every minute
+      
+      return () => clearInterval(interval);
+    }
+  }, [todaysSchedule, collectedAreas]);
+
+  // 🔹 Step 1: When collector data is loaded, request GPS permission
+  useEffect(() => {
+    if (collector && !authLoading) {
+      addLog(`✅ Driver loaded: ${collector.driver || collector.firstName} (ID: ${collector.id})`);
+      requestLocationPermission();
+    }
+  }, [collector, authLoading]);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !collector) {
+      router.replace('/login');
+    }
+  }, [collector, authLoading, router]);
+
+  // Set initial marker position when map is ready and we have location
+  useEffect(() => {
+    if (mapInitialized && location) {
+      setInitialMarkerPosition(location.latitude, location.longitude);
+    }
+  }, [mapInitialized, location]);
+
+
+  const addLog = (msg) => {
+    setLogs((prev) => [`${new Date().toLocaleTimeString()} - ${msg}`, ...prev].slice(0, 10));
+  };
+
+  // Function to update marker position smoothly
+  const updateMarkerPosition = (newLat, newLng) => {
+    if (webviewRef.current && mapInitialized) {
+      const script = `
+        if (window.marker && window.map) {
+          // Smooth animation to new position
+          window.marker.setLatLng([${newLat}, ${newLng}]);
+          
+          // Smooth pan to follow the marker (optional - you can remove this if you don't want auto-pan)
+          window.map.panTo([${newLat}, ${newLng}], {
+            animate: true,
+            duration: 1.0
+          });
+          
+          // Update popup content with current coordinates
+          window.marker.getPopup().setContent(
+            "You (Collector)<br>Lat: ${newLat.toFixed(5)}<br>Lng: ${newLng.toFixed(5)}"
+          );
+        }
+      `;
+      webviewRef.current.injectJavaScript(script);
+    }
+  };
+
+  // Function to set initial marker position when map loads
+  const setInitialMarkerPosition = (lat, lng) => {
+    if (webviewRef.current && mapInitialized) {
+      const script = `
+        if (window.marker && window.map) {
+          // Set initial position without animation
+          window.marker.setLatLng([${lat}, ${lng}]);
+          window.map.setView([${lat}, ${lng}], 15);
+          window.marker.getPopup().setContent(
+            "You (Collector)<br>Lat: ${lat.toFixed(5)}<br>Lng: ${lng.toFixed(5)}"
+          );
+        }
+      `;
+      webviewRef.current.injectJavaScript(script);
+    }
+  };
+
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setHasLocationPermission(true);
+        startTracking();
+      } else {
+        setHasLocationPermission(false);
+        setIsLoadingLocation(false);
+        showLocationPermissionAlert();
+      }
+    } catch (error) {
+      setIsLoadingLocation(false);
+    }
+  };
+
+  const startTracking = async () => {
+    // Don't start tracking if collector data is not loaded yet
+    if (!collector) {
+      addLog("⚠️ Cannot start GPS tracking: Driver data not loaded yet.");
+      return;
+    }
+
+    try {
+      addLog("🔄 Starting GPS tracking...");
+      await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 0 }, // every 2 sec
+        async (loc) => {
+          const coords = {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+          };
+          
+          // Update location state
+          setLocation(coords);
+          setIsLoadingLocation(false);
+
+          // Update marker position smoothly
+          updateMarkerPosition(coords.latitude, coords.longitude);
+
+          if (!collector) {
+            addLog("⚠️ Driver data not loaded yet, skipping GPS update.");
+            return;
+          }
+
+          try {
+            await supabase.from('locations').upsert({
+              collector_id: collector.id,
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+              updated_at: new Date().toISOString(),
+            });
+            addLog(`📡 Sent GPS for ${collector.driver || collector.firstName || "Driver"}: ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`);
+          } catch (err) {
+            addLog(`❌ Error sending GPS: ${err.message}`);
+          }
+        }
+      );
+    } catch (error) {
+      addLog(`⚠️ Error starting tracking: ${error.message}`);
+    }
+  };
+
+  const showLocationPermissionAlert = () => {
+    Alert.alert('Location Permission Required', 'Enable location services to track your position.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Enable Location', onPress: requestLocationPermission },
+    ]);
+  };
+
+  // Render map (Leaflet in WebView) - stable map that doesn't re-render
+  const getMapHtml = () => {
+    return `<!doctype html>
+      <html>
+        <head>
+          <meta name="viewport" content="initial-scale=1.0, width=device-width" />
+          <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+          <style>
+            html,body,#map{height:100%;margin:0;padding:0;}
+            .leaflet-control-zoom { display: none !important; }
+            .custom-icon {
+              background: transparent;
+              border: none;
+            }
+          </style>
+        </head>
+        <body>
+          <div id="map"></div>
+          <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+          <script>
+            // Initialize map with default location
+            window.map = L.map('map', { zoomControl: false }).setView([8.4542, 124.6319], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(window.map);
+
+            // Create marker with smooth animation
+            window.marker = L.marker([8.4542, 124.6319], {
+              icon: L.divIcon({
+                className: 'custom-icon',
+                html: "🚛",
+                iconSize: [32, 32],
+                iconAnchor: [16, 16],
+              })
+            }).addTo(window.map).bindPopup("You (Collector)");
+
+            // Signal that map is ready
+            window.ReactNativeWebView.postMessage(JSON.stringify({type: 'mapReady'}));
+          </script>
+        </body>
+      </html>`;
+  };
+
+  const userLocation = location || defaultLocation;
+
+  // Show loading state while authentication is being checked
+  if (authLoading) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}><Text style={styles.routeTitle}>Loading Routes...</Text></View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#458A3D" />
-          <Text style={styles.loadingText}>Fetching your assigned routes...</Text>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Loading driver data...</Text>
         </View>
       </View>
     );
   }
 
+  // Don't render if not authenticated (will redirect)
   if (!collector) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.header}><Text style={styles.routeTitle}>Not Logged In</Text></View>
-        <View style={styles.loadingContainer}><Text style={styles.loadingText}>Please log in to view your routes</Text></View>
-      </View>
-    );
+    return null;
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.routeTitle}>
-          {selectedRoute ? `Route ${selectedRoute.route} - ${selectedRoute.type || 'Waste Collection'}` : 'No Routes Assigned'}
-        </Text>
-        <TouchableOpacity><Text style={styles.allRoutes}>All Routes</Text></TouchableOpacity>
+      {hasLocationPermission && !isLoadingLocation ? (
+        <View style={[styles.mapContainer, { height: MAP_HEIGHT }]}>
+          <WebView
+            ref={webviewRef}
+            originWhitelist={['*']}
+            source={{ html: getMapHtml() }}
+            style={styles.webview}
+            onMessage={(event) => {
+              try {
+                const data = JSON.parse(event.nativeEvent.data);
+                if (data.type === 'mapReady') {
+                  setMapInitialized(true);
+                  addLog("🗺️ Map initialized and ready for tracking");
+                }
+              } catch (e) {
+                // Ignore parsing errors
+              }
+            }}
+            onLoadEnd={() => {
+              // Set initial marker position when map loads
+              if (location) {
+                setInitialMarkerPosition(location.latitude, location.longitude);
+              }
+            }}
+          />
+        </View>
+      ) : (
+        <View style={[styles.placeholder, styles.mapContainer, { height: MAP_HEIGHT }]} />
+      )}
+
+      <View style={styles.floatingCard}>
+        <View style={styles.areaContainer}>
+          <View style={styles.currentAreaCard}>
+            <Text style={styles.areaTitle}>Current Area</Text>
+            {currentArea ? (
+              <View>
+                <Text style={styles.areaName}>{currentArea.location}</Text>
+                <Text style={styles.areaTime}>
+                  {formatTime(currentArea.time)} - {formatTime(currentArea.endTime)}
+                </Text>
+                <Text style={styles.areaRoute}>Route {currentArea.routeNumber}</Text>
+              </View>
+            ) : (
+              <Text style={styles.noAreaText}>No current area</Text>
+            )}
+          </View>
+          
+          <View style={styles.nextAreaCard}>
+            <Text style={styles.areaTitle}>Next Area</Text>
+            {nextArea ? (
+              <View>
+                <Text style={styles.areaName}>{nextArea.location}</Text>
+                <Text style={styles.areaTime}>
+                  {formatTime(nextArea.time)} - {formatTime(nextArea.endTime)}
+                </Text>
+                <Text style={styles.areaRoute}>Route {nextArea.routeNumber}</Text>
+              </View>
+            ) : (
+              <Text style={styles.noAreaText}>No next area</Text>
+            )}
+          </View>
+        </View>
       </View>
-      <MapView
-        style={styles.map}
-        initialRegion={{ latitude: 11.046419171933303, longitude: 123.97920466105226, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
-        showsUserLocation={false}
-      >
-        {renderMarkers()}
-        {renderRouteLine()}
-      </MapView>
-      {selectedRoute && (
-        <View style={styles.bottomCard}>
-          <Text style={styles.timeText}>{formatTime(selectedRoute.time)} — {formatTime(selectedRoute.endTime) || 'End Time'}</Text>
-          <Text style={styles.barangayText}>{selectedRoute.areas && selectedRoute.areas.length > 0 ? selectedRoute.areas.join(' • ') : 'Areas to collect'}</Text>
-          <Text style={styles.frequencyText}>{selectedRoute.frequency || 'Schedule'} • {selectedRoute.dayOff ? `Day off: ${selectedRoute.dayOff}` : ''}</Text>
-          <View style={styles.badgeRow}>
-            <View style={styles.badge}><Text style={styles.badgeText}>{selectedRoute.type || 'Waste Collection'}</Text></View>
-            {selectedRoute.color && (<View style={[styles.colorBadge, { backgroundColor: selectedRoute.color }]}><Text style={styles.colorBadgeText}>Route {selectedRoute.route}</Text></View>)}
-          </View>
-          <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.collectButton}><Text style={styles.collectButtonText}>Mark as Collected</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.issueButton}><Text style={styles.issueButtonText}>Report Issue</Text></TouchableOpacity>
-          </View>
-        </View>
-      )}
-      {routes.length > 1 && (
-        <View style={styles.routeSelector}>
-          <Text style={styles.selectorTitle}>Select Route:</Text>
-          <View style={styles.routeButtons}>
-            {routes.map((route) => (
-              <TouchableOpacity key={route.id} style={[styles.routeButton, selectedRoute?.id === route.id && styles.routeButtonActive]} onPress={() => setSelectedRoute(route)}>
-                <Text style={[styles.routeButtonText, selectedRoute?.id === route.id && styles.routeButtonTextActive]}>Route {route.route}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
+
+      {/* Logs */}
+      <View style={styles.logContainer}>
+        <Text style={styles.logTitle}>GPS Logs:</Text>
+        <ScrollView style={styles.logScroll}>
+          {logs.map((log, index) => (
+            <Text key={index} style={styles.logText}>{log}</Text>
+          ))}
+        </ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8f9fa' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 50, paddingBottom: 10, backgroundColor: '#fff', zIndex: 2 },
-  routeTitle: { fontSize: 18, fontWeight: '600', color: '#222', flex: 1 },
-  allRoutes: { fontSize: 15, color: '#007AFF', fontWeight: '500' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
-  loadingText: { marginTop: 16, fontSize: 16, color: '#666', textAlign: 'center' },
-  map: { flex: 1, width: '100%', borderRadius: 18, marginBottom: 0, overflow: 'hidden' },
-  bottomCard: { position: 'absolute', bottom: 0, left: 0, width: width, backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 8 },
-  timeText: { fontSize: 18, fontWeight: '600', color: '#222', marginBottom: 2 },
-  barangayText: { fontSize: 16, color: '#222', marginBottom: 4, fontWeight: '600' },
-  frequencyText: { fontSize: 13, color: '#888', marginBottom: 8 },
-  badgeRow: { flexDirection: 'row', marginBottom: 16 },
-  badge: { backgroundColor: '#e6f9e6', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, marginRight: 8 },
-  badgeText: { color: '#34C759', fontWeight: '500', fontSize: 13 },
-  colorBadge: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
-  colorBadgeText: { color: '#fff', fontWeight: '500', fontSize: 13 },
-  buttonRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  collectButton: { backgroundColor: '#458A3D', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 18, flex: 1, marginRight: 10, alignItems: 'center' },
-  collectButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  issueButton: { backgroundColor: '#f2f2f2', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 18, flex: 1, alignItems: 'center' },
-  issueButtonText: { color: '#222', fontWeight: '600', fontSize: 16 },
-  routeSelector: { position: 'absolute', top: 120, left: 20, right: 20, backgroundColor: '#fff', borderRadius: 12, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
-  selectorTitle: { fontSize: 16, fontWeight: '600', color: '#222', marginBottom: 12 },
-  routeButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  routeButton: { backgroundColor: '#f2f2f2', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 },
-  routeButtonActive: { backgroundColor: '#458A3D' },
-  routeButtonText: { fontSize: 14, fontWeight: '500', color: '#666' },
-  routeButtonTextActive: { color: '#fff' },
+  container: { flex: 1 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+  },
+  mapContainer: {
+    marginHorizontal: 16,
+    marginTop: 32,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 5,
+  },
+  webview: { ...StyleSheet.absoluteFillObject },
+  placeholder: { flex: 1, backgroundColor: '#f2f2f2' },
+  floatingCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: 'white',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  areaContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  currentAreaCard: {
+    flex: 1,
+    padding: 12,
+    backgroundColor: '#E8F5E8',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  nextAreaCard: {
+    flex: 1,
+    padding: 12,
+    backgroundColor: '#F0F8FF',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  areaTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  areaName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 4,
+  },
+  areaTime: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 2,
+  },
+  areaRoute: {
+    fontSize: 11,
+    color: '#888',
+    fontStyle: 'italic',
+  },
+  noAreaText: {
+    fontSize: 14,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  logContainer: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#111',
+    maxHeight: 140,
+  },
+  logTitle: { fontSize: 14, fontWeight: 'bold', color: '#4CAF50', marginBottom: 6 },
+  logScroll: { maxHeight: 110 },
+  logText: { fontSize: 12, color: '#eee', marginBottom: 2 },
 });
-
-
