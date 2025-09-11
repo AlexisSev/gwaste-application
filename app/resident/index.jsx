@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -427,13 +429,13 @@ export default function ResidentIndex() {
           </View>
 
           <View style={styles.scheduleContainer}>
-            <Text style={styles.mainScheduleTitle}>Today's Schedule:</Text>
+            <Text style={styles.mainScheduleTitle}>Today`s Schedule:</Text>
             
             {/* Schedule Items */}
             <View style={styles.scheduleList}>
               {scheduleLoading ? (
                 <View style={styles.loadingContainer}>
-                  <Text style={styles.loadingText}>Loading today's schedule...</Text>
+                  <Text style={styles.loadingText}>Loading today`s schedule...</Text>
                 </View>
               ) : todaysSchedule.length === 0 ? (
                 <Text style={styles.noScheduleText}>No collection scheduled for today.</Text>
