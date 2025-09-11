@@ -3,7 +3,7 @@
 import * as Location from 'expo-location';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Dimensions, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { auth, db } from '../../firebase';
 import { supabase } from '../../services/supabaseClient';
@@ -15,7 +15,7 @@ export default function MapScreen() {
   const [collectors, setCollectors] = useState([]);
   const [mapInitialized, setMapInitialized] = useState(false);
   const webviewRef = useRef(null);
-  const MAP_HEIGHT = Math.round(Dimensions.get('window').height * 0.77);
+  // Map should occupy the whole screen
   const [destination, setDestination] = useState(null);
   const [routeCoords, setRouteCoords] = useState([]);
   const [pickupInfo, setPickupInfo] = useState({
@@ -586,7 +586,7 @@ export default function MapScreen() {
   return (
     <View style={styles.container}>
       {hasLocationPermission && !isLoadingLocation ? (
-        <View style={[styles.mapContainer, { height: MAP_HEIGHT }]}>
+        <View style={styles.mapContainer}>
           <WebView
             ref={webviewRef}
             originWhitelist={['*']}
@@ -615,7 +615,7 @@ export default function MapScreen() {
           />
         </View>
       ) : (
-        <View style={[styles.placeholder, styles.mapContainer, { height: MAP_HEIGHT }]} />
+        <View style={[styles.placeholder, styles.mapContainer]} />
       )}
 
       <TouchableOpacity 
@@ -710,24 +710,23 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   mapContainer: {
-    marginHorizontal: 16,
-    marginTop: 32,
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    flex: 1,
   },
   webview: { ...StyleSheet.absoluteFillObject },
   placeholder: { flex: 1, backgroundColor: '#f2f2f2' },
   floatingCard: {
-    marginHorizontal: 16,
-    marginTop: 12,
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 24,
     padding: 14,
     borderRadius: 12,
     backgroundColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 6,
   },
   scheduleTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 4, color: '#000' },
   locationText: { fontWeight: '800', color: '#4CAF50' },

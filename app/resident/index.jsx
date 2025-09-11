@@ -2,7 +2,7 @@
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth, db } from '../../firebase';
@@ -73,11 +73,11 @@ export default function ResidentIndex() {
     try {
       if (!residentData?.purok) return;
       
+      // Avoid requiring a composite index by removing server-side orderBy.
+      // We'll sort by timestamp on the client and take the latest 10.
       const notificationsQuery = query(
         collection(db, 'notifications'),
-        where('area', '==', residentData.purok),
-        orderBy('timestamp', 'desc'),
-        limit(10)
+        where('area', '==', residentData.purok)
       );
       
       const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
@@ -88,7 +88,15 @@ export default function ResidentIndex() {
             ...doc.data()
           });
         });
-        setNotifications(notificationList);
+
+        // Sort by timestamp desc on client and limit to 10
+        notificationList.sort((a, b) => {
+          const ta = a.timestamp?.seconds ? a.timestamp.seconds * 1000 + (a.timestamp.nanoseconds || 0) / 1e6 : new Date(a.timestamp || 0).getTime();
+          const tb = b.timestamp?.seconds ? b.timestamp.seconds * 1000 + (b.timestamp.nanoseconds || 0) / 1e6 : new Date(b.timestamp || 0).getTime();
+          return tb - ta;
+        });
+
+        setNotifications(notificationList.slice(0, 10));
       });
       
       return unsubscribe;
