@@ -702,8 +702,44 @@ export default function MapScreen() {
             </ScrollView>
           </View>
         </View>
-      </Modal>
-    </View>
+
+        <View style={styles.bottomSpacing} />
+      </ScrollView>
+
+      <View style={styles.bottomNav}>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident')}
+        >
+          <FontAwesome5 name="home" size={24} color="#666" />
+          <Text style={styles.navText}>Home</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/map')}
+        >
+          <FontAwesome5 name="map-marked-alt" size={24} color="#4CAF50" />
+          <Text style={[styles.navText, styles.activeNav]}>Map</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/schedule')}
+        >
+          <FontAwesome5 name="calendar-alt" size={24} color="#666" />
+          <Text style={styles.navText}>Schedule</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/categorize')}
+        >
+          <FontAwesome5 name="list" size={24} color="#666" />
+          <Text style={styles.navText}>Sorting Guide</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 }
 

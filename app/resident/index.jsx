@@ -6,7 +6,7 @@ import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, wh
 import { useEffect, useState } from 'react';
 import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth, db } from '../../firebase';
-
+//commenttttt
 export default function ResidentIndex() {
   const params = useLocalSearchParams();
   const [residentData, setResidentData] = useState(null);
@@ -496,6 +496,40 @@ export default function ResidentIndex() {
           </View>
         </View>
       </ScrollView>
+
+      <View style={styles.bottomNav}>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident')}
+        >
+          <FontAwesome5 name="home" size={24} color="#4CAF50" />
+          <Text style={[styles.navText, styles.activeNav]}>Home</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/map')}
+        >
+          <FontAwesome5 name="map-marked-alt" size={24} color="#666" />
+          <Text style={styles.navText}>Map</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/schedule')}
+        >
+          <FontAwesome5 name="calendar-alt" size={24} color="#666" />
+          <Text style={styles.navText}>Schedule</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => router.push('/resident/categorize')}
+        >
+          <FontAwesome5 name="list" size={24} color="#666" />
+          <Text style={styles.navText}>Sorting Guide</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
