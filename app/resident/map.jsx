@@ -751,11 +751,7 @@ export default function MapScreen() {
         <Text style={styles.statusText}>
           Status: <Text style={getStatusStyle(pickupInfo.status)}>{pickupInfo.status}</Text>
         </Text>
-        {pickupInfo.nextCollector && (
-          <Text style={styles.collectorInfo}>
-            Driver: {pickupInfo.driverName || pickupInfo.nextCollector.collector_id}
-          </Text>
-        )}
+      
         {!pickupInfo.nextCollector && (
           <Text style={styles.tapToRefresh}>No active driver right now</Text>
         )}

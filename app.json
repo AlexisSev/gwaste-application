@@ -8,6 +8,7 @@
     "scheme": "gwaste",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "sdkVersion": "54.0.0",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
