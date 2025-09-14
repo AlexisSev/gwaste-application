@@ -51,6 +51,12 @@ export default function CollectorTabLayout() {
           tabBarIcon: ({ color }) => <TabBarIcon name="calendar" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          href: null, // This completely hides the tab from the tab bar
+        }}
+      />
     </Tabs>
   );
 }

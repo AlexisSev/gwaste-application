@@ -511,10 +511,22 @@ export default function ResidentIndex() {
 
       {isDropdownVisible && (
         <View style={styles.dropdownMenu}>
-          <TouchableOpacity style={styles.dropdownItem}>
+          <TouchableOpacity 
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/resident/profile');
+            }}
+          >
             <Text style={styles.dropdownText}>Profile</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.dropdownItem}>
+          <TouchableOpacity 
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/resident/settings');
+            }}
+          >
             <Text style={styles.dropdownText}>Settings</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
@@ -528,121 +540,83 @@ export default function ResidentIndex() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.content}>
-          <Text style={styles.greeting}>
-            {getGreeting()} {residentData?.firstName || 'Resident'}!
-          </Text>
-                     <View style={styles.locationContainer}>
-             <Feather name="map-pin" size={20} color="#666" />
-             <View style={styles.addressContainer}>
-              <Text style={styles.purok}>
-                {residentData?.purok || 'Loading...'}
-              </Text>
-              <Text style={styles.location}>
+          {/* Header Section */}
+          <View style={styles.headerSection}>
+            <Text style={styles.greeting}>
+              {getGreeting()}, {residentData?.firstName || 'Resident'}!
+            </Text>
+            <View style={styles.locationContainer}>
+              <Feather name="map-pin" size={16} color="#8BC500" />
+              <Text style={styles.address}>
                 {residentData?.address || 'Loading...'}
               </Text>
             </View>
           </View>
 
-
-          <View style={styles.mapPreview}>
-            {/* Map preview component would go here */}
-            <View style={styles.truckInfo}>
-              {!hasLocationPermission ? (
-                <TouchableOpacity onPress={handleEnableLocation} activeOpacity={0.8}>
-                  <Text style={styles.truckDistance}>Enable location</Text>
+          {/* Next Collection Card */}
+          <View style={styles.nextCollectionCard}>
+            <View style={styles.nextCollectionContent}>
+              <View style={styles.nextCollectionInfo}>
+                <Text style={styles.nextCollectionTitle}>Next Collection</Text>
+                <Text style={styles.nextCollectionDetails}>
+                  {scheduleData?.time ? `Today, ${formatTime(scheduleData.time)}` : 'No collection scheduled'}
+                </Text>
+                <TouchableOpacity 
+                  style={styles.viewDetailsButton}
+                  onPress={() => router.push('/resident/schedule')}
+                >
+                  <Text style={styles.viewDetailsText}>View Details</Text>
                 </TouchableOpacity>
-              ) : (
-                <>
-                  <Text style={styles.truckText}>Truck is</Text>
-                  <Text style={styles.truckDistance}>
-                    {distanceLoading ? '...'
-                      : nearestDistanceKm == null ? 'N/A'
-                      : `${nearestDistanceKm < 1 ? Math.round(nearestDistanceKm * 1000) + 'm' : nearestDistanceKm.toFixed(1) + 'km'} away`}
-                  </Text>
-                </>
-              )}
+              </View>
+              <View style={styles.nextCollectionIcon}>
+                <Feather name="calendar" size={24} color="#8BC500" />
+              </View>
             </View>
-            <TouchableOpacity style={styles.viewMapButton} onPress={() => router.push({ pathname: '/resident/map', params: { pickupType: scheduleData?.type || '', driver: scheduleData?.driver || '' } })}>
-              <Text style={styles.viewMapText}>View on Map</Text>
+          </View>
+
+          {/* Feature Cards Grid */}
+          <View style={styles.featureCardsGrid}>
+            {/* Truck Location Card */}
+            <TouchableOpacity 
+              style={styles.featureCard}
+              onPress={() => router.push('/resident/map')}
+            >
+              <View style={styles.featureIconContainer}>
+                <Feather name="map-pin" size={20} color="#8BC500" />
+              </View>
+              <Text style={styles.featureTitle}>Truck Location</Text>
+              <Text style={styles.featureDescription}>Live tracking</Text>
+            </TouchableOpacity>
+
+            {/* Announcements Card */}
+            <TouchableOpacity style={styles.featureCard}>
+              <View style={[styles.featureIconContainer, styles.announcementIcon]}>
+                <Feather name="alert-triangle" size={20} color="#FFA500" />
+              </View>
+              <Text style={styles.featureTitle}>Announcements</Text>
+              <Text style={styles.featureDescription}>Heavy rain delay</Text>
+            </TouchableOpacity>
+
+            {/* Eco Tip Card */}
+            <TouchableOpacity 
+              style={styles.featureCard}
+              onPress={() => router.push('/resident/categorize')}
+            >
+              <View style={styles.featureIconContainer}>
+                <Feather name="leaf" size={20} color="#8BC500" />
+              </View>
+              <Text style={styles.featureTitle}>Eco Tip</Text>
+              <Text style={styles.featureDescription}>Recycle plastic bottles</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.scheduleContainer}>
-            <Text style={styles.mainScheduleTitle}>Today`s Schedule:</Text>
-            
-            {/* Schedule Items */}
-            <View style={styles.scheduleList}>
-              {scheduleLoading ? (
-                <View style={styles.loadingContainer}>
-                  <Text style={styles.loadingText}>Loading today`s schedule...</Text>
-                </View>
-              ) : todaysSchedule.length === 0 ? (
-                <Text style={styles.noScheduleText}>No collection scheduled for today.</Text>
-              ) : (
-                todaysSchedule.map((item, idx) => {
-                  const isCollected = item.collected || collectedAreas.has(item.location);
-                  return (
-                    <View 
-                      style={[
-                        styles.scheduleItem, 
-                        isCollected && styles.scheduleItemCollected
-                      ]} 
-                      key={idx}
-                    >
-                      <View style={styles.scheduleTimeContainer}>
-                        <Text style={[
-                          styles.scheduleTime,
-                          isCollected && styles.scheduleTimeCollected
-                        ]}>
-                          {formatTime(item.time)} - {formatTime(item.endTime)}
-                        </Text>
-                        <Text style={[
-                          styles.estimatedTime,
-                          isCollected && styles.estimatedTimeCollected
-                        ]}>
-                          Est. {Math.round((new Date(`2000-01-01 ${item.endTime}`) - new Date(`2000-01-01 ${item.time}`)) / (1000 * 60))} mins
-                        </Text>
-                        {item.areaIndex && (
-                          <Text style={[
-                            styles.areaIndex,
-                            isCollected && styles.areaIndexCollected
-                          ]}>
-                            Area {item.areaIndex}
-                          </Text>
-                        )}
-                      </View>
-                      <View style={styles.scheduleLocationContainer}>
-                        <View style={styles.locationHeader}>
-                          <Text style={[
-                            styles.scheduleLocation,
-                            isCollected && styles.scheduleLocationCollected
-                          ]}>
-                            {item.location}
-                          </Text>
-                          {isCollected && (
-                            <View style={styles.collectedIndicator}>
-                              <Text style={styles.collectedText}>✓ Collected</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={[
-                          styles.scheduleType,
-                          isCollected && styles.scheduleTypeCollected
-                        ]}>
-                          {item.type}
-                        </Text>
-                        {isCollected && item.collectedAt && (
-                          <Text style={styles.collectedTime}>
-                            Collected at: {new Date(item.collectedAt).toLocaleTimeString()}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          </View>
+          {/* Report Concern Button */}
+          <TouchableOpacity style={styles.reportConcernButton}>
+            <Text style={styles.reportConcernText}>Report a Concern</Text>
+          </TouchableOpacity>
+
+
+
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -932,5 +906,134 @@ const styles = StyleSheet.create({
     padding: 20,
     textAlign: 'center',
     fontStyle: 'italic'
+  },
+  // New Homepage Styles
+  headerSection: {
+    marginBottom: 24,
+  },
+  nextCollectionCard: {
+    backgroundColor: '#E8F5E8',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  nextCollectionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  nextCollectionInfo: {
+    flex: 1,
+  },
+  nextCollectionTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  nextCollectionDetails: {
+    fontSize: 16,
+    color: '#8BC500',
+    marginBottom: 16,
+    fontWeight: '500',
+  },
+  viewDetailsButton: {
+    backgroundColor: '#8BC500',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  viewDetailsText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  nextCollectionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featureCardsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  featureCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    width: '48%',
+    marginBottom: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  featureIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E8F5E8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  announcementIcon: {
+    backgroundColor: '#FFF3E0',
+  },
+  featureTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  featureDescription: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+  },
+  reportConcernButton: {
+    backgroundColor: '#FF4444',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  reportConcernText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  address: {
+    fontSize: 14,
+    color: '#8BC500',
+    marginLeft: 6,
+    fontWeight: '500',
   }
 });

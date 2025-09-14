@@ -500,7 +500,7 @@ export default function LandingScreen() {
             <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/profile'); }}>
               <Text style={styles.dropdownText}>My Profile</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/settings'); }}>
+            <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/collector/settings'); }}>
               <Text style={styles.dropdownText}>Settings</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>

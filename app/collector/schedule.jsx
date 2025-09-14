@@ -1,10 +1,9 @@
+import { Feather } from '@expo/vector-icons';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 // eslint-disable-next-line import/namespace
 import { ThemedView } from '../../components/ThemedView';
-import PrimaryButton from '../../components/ui/PrimaryButton';
-import { Colors } from '../../constants/Colors';
 import { db } from '../../firebase';
 import { useCollectorAuth } from '../../hooks/useCollectorAuth';
 
@@ -159,15 +158,21 @@ export default function ScheduleScreen() {
       </View>
       <View style={styles.monthDisplay}><Text style={styles.monthText}>{getWeekDates()[0].fullDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</Text></View>
       <View style={styles.weekSelector}>
-        <PrimaryButton onPress={handlePrev} style={styles.arrowBtn}><Text style={styles.arrow}>{'<'}</Text></PrimaryButton>
-        {weekDays.map((d) => (
-          <TouchableOpacity key={d.date} style={styles.dayBtn} onPress={() => setSelectedDay(d.date)} activeOpacity={0.7}>
-            <Text style={[styles.dayLabel, selectedDay === d.date && styles.selectedDayLabel]}>{d.label}</Text>
-            <Text style={[styles.dayDate, selectedDay === d.date && styles.selectedDayDate]}>{d.date}</Text>
-            {selectedDay === d.date && <View style={styles.selectedDot} />}
-          </TouchableOpacity>
-        ))}
-        <PrimaryButton onPress={handleNext} style={styles.arrowBtn}><Text style={styles.arrow}>{'>'}</Text></PrimaryButton>
+        <TouchableOpacity onPress={handlePrev} style={styles.arrowBtn}>
+          <Feather name="chevron-left" size={20} color="#fff" />
+        </TouchableOpacity>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daysContainer}>
+          {weekDays.map((d) => (
+            <TouchableOpacity key={d.date} style={[styles.dayBtn, selectedDay === d.date && styles.selectedDayBtn]} onPress={() => setSelectedDay(d.date)} activeOpacity={0.7}>
+              <Text style={[styles.dayLabel, selectedDay === d.date && styles.selectedDayLabel]}>{d.label}</Text>
+              <Text style={[styles.dayDate, selectedDay === d.date && styles.selectedDayDate]}>{d.date}</Text>
+              {selectedDay === d.date && <View style={styles.selectedDot} />}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <TouchableOpacity onPress={handleNext} style={styles.arrowBtn}>
+          <Feather name="chevron-right" size={20} color="#fff" />
+        </TouchableOpacity>
       </View>
       <ScrollView style={styles.timeline} contentContainerStyle={{ paddingBottom: 32 }}>
         {todaySchedule.map((item, idx) => (
@@ -179,18 +184,46 @@ export default function ScheduleScreen() {
             <View style={styles.timelineCardCol}>
               {item.location ? (
                 <ThemedView style={styles.card}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.cardLocation}>{item.location}</Text>
-                      <Text style={styles.cardTrashType}>Type: <Text style={styles.trashType}>{item.icon} {item.trashType}</Text></Text>
-                      {item.routeNumber && (<Text style={styles.cardRoute}>Route {item.routeNumber}</Text>)}
-                      {item.frequency && (<Text style={styles.cardFrequency}>{item.frequency}</Text>)}
+                  <View style={styles.cardContent}>
+                    <View style={styles.cardInfo}>
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.cardLocation}>{item.location}</Text>
+                        <View style={styles.statusBadge}>
+                          <View style={styles.statusDot} />
+                          <Text style={styles.statusText}>Scheduled</Text>
+                        </View>
+                      </View>
+                      <View style={styles.cardDetails}>
+                        <View style={styles.detailRow}>
+                          <Feather name="trash-2" size={16} color="#8BC500" />
+                          <Text style={styles.cardTrashType}>{item.trashType}</Text>
+                        </View>
+                        {item.routeNumber && (
+                          <View style={styles.detailRow}>
+                            <Feather name="map" size={16} color="#8BC500" />
+                            <Text style={styles.cardRoute}>Route {item.routeNumber}</Text>
+                          </View>
+                        )}
+                        {item.frequency && (
+                          <View style={styles.detailRow}>
+                            <Feather name="repeat" size={16} color="#8BC500" />
+                            <Text style={styles.cardFrequency}>{item.frequency}</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
-                    <Text style={styles.cardArrow}>{'>'}</Text>
+                    <View style={styles.cardAction}>
+                      <Feather name="chevron-right" size={20} color="#8BC500" />
+                    </View>
                   </View>
                 </ThemedView>
               ) : (
-                <ThemedView style={styles.cardEmpty} />
+                <ThemedView style={styles.cardEmpty}>
+                  <View style={styles.emptyCardContent}>
+                    <Feather name="calendar" size={24} color="#ccc" />
+                    <Text style={styles.emptyCardText}>No collection scheduled</Text>
+                  </View>
+                </ThemedView>
               )}
             </View>
           </View>
@@ -201,37 +234,261 @@ export default function ScheduleScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA', paddingTop: 40 },
-  header: { paddingHorizontal: 24, paddingBottom: 8 },
-  date: { color: '#888', fontSize: 15, marginBottom: 2 },
-  day: { color: '#458A3D', fontSize: 32, fontWeight: 'bold' },
-  weekSelector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', marginVertical: 8, borderBottomWidth: 1, borderBottomColor: '#e0e0e0', minHeight: 60 },
-  arrowBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#458A3D', alignItems: 'center', justifyContent: 'center', marginHorizontal: -1, padding: 0, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, zIndex: 1 },
-  arrow: { fontSize: 20, marginTop: -7, color: '#fff', fontWeight: 'bold' },
-  dayBtn: { alignItems: 'center', marginHorizontal: 2, minWidth: 32, paddingVertical: 4 },
-  dayLabel: { color: '#888', fontSize: 13 },
-  dayDate: { color: '#888', fontSize: 15, fontWeight: 'bold' },
-  selectedDayLabel: { color: '#458A3D', fontWeight: 'bold' },
-  selectedDayDate: { color: '#458A3D', fontWeight: 'bold' },
-  selectedDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#458A3D', marginTop: 2 },
-  timeline: { flex: 1, backgroundColor: '#F4F8EC', paddingHorizontal: 0 },
-  timelineRow: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 10, marginLeft: 24 },
-  timelineCol: { alignItems: 'center', width: 60 },
-  timelineDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: Colors.light.tint, marginBottom: 4, borderWidth: 3, borderColor: '#fff', zIndex: 2 },
-  timelineTime: { fontSize: 13, color: '#888', marginTop: 2 },
-  timelineCardCol: { flex: 1, paddingRight: 24 },
-  card: { backgroundColor: '#458A3D', borderRadius: 12, padding: 16, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
-  cardLocation: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
-  cardTrashType: { color: '#eaffc0', fontSize: 14 },
-  trashType: { color: '#fff', fontWeight: 'bold' },
-  cardRoute: { color: '#fff', fontSize: 14, marginTop: 4 },
-  cardFrequency: { color: '#fff', fontSize: 14, marginTop: 4 },
-  cardArrow: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
-  cardEmpty: { backgroundColor: '#f3f7e7', borderRadius: 12, height: 60, marginBottom: 8 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 20 },
-  loadingText: { color: '#888', fontSize: 16, marginTop: 10 },
-  monthDisplay: { paddingHorizontal: 24, paddingBottom: 8, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e0e0e0', alignItems: 'center' },
-  monthText: { color: '#458A3D', fontSize: 18, fontWeight: 'bold', textAlign: 'center' },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#F8F9FA', 
+    paddingTop: 40 
+  },
+  header: { 
+    paddingHorizontal: 24, 
+    paddingBottom: 8 
+  },
+  date: { 
+    color: '#888', 
+    fontSize: 15, 
+    marginBottom: 2 
+  },
+  day: { 
+    color: '#8BC500', 
+    fontSize: 32, 
+    fontWeight: 'bold' 
+  },
+  monthDisplay: { 
+    paddingHorizontal: 24, 
+    paddingBottom: 8, 
+    backgroundColor: '#fff', 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#e0e0e0', 
+    alignItems: 'center' 
+  },
+  monthText: { 
+    color: '#8BC500', 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    textAlign: 'center' 
+  },
+  weekSelector: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingHorizontal: 16, 
+    paddingVertical: 16, 
+    backgroundColor: '#fff', 
+    marginVertical: 8, 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#e0e0e0', 
+    minHeight: 70 
+  },
+  arrowBtn: { 
+    width: 44, 
+    height: 44, 
+    borderRadius: 22, 
+    backgroundColor: '#8BC500', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 3 }, 
+    shadowOpacity: 0.15, 
+    shadowRadius: 6, 
+    elevation: 4 
+  },
+  daysContainer: {
+    flex: 1,
+    marginHorizontal: 12
+  },
+  dayBtn: { 
+    alignItems: 'center', 
+    marginHorizontal: 4, 
+    minWidth: 48, 
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: 'transparent'
+  },
+  selectedDayBtn: {
+    backgroundColor: '#8BC500',
+    shadowColor: '#8BC500',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  dayLabel: { 
+    color: '#888', 
+    fontSize: 12, 
+    fontWeight: '500',
+    marginBottom: 2
+  },
+  dayDate: { 
+    color: '#333', 
+    fontSize: 16, 
+    fontWeight: 'bold' 
+  },
+  selectedDayLabel: { 
+    color: '#fff', 
+    fontWeight: 'bold' 
+  },
+  selectedDayDate: { 
+    color: '#fff', 
+    fontWeight: 'bold' 
+  },
+  selectedDot: { 
+    width: 6, 
+    height: 6, 
+    borderRadius: 3, 
+    backgroundColor: '#fff', 
+    marginTop: 4 
+  },
+  timeline: { 
+    flex: 1, 
+    backgroundColor: '#F4F8EC', 
+    paddingHorizontal: 0 
+  },
+  timelineRow: { 
+    flexDirection: 'row', 
+    alignItems: 'flex-start', 
+    marginVertical: 12, 
+    marginLeft: 24 
+  },
+  timelineCol: { 
+    alignItems: 'center', 
+    width: 60 
+  },
+  timelineDot: { 
+    width: 18, 
+    height: 18, 
+    borderRadius: 9, 
+    backgroundColor: '#8BC500', 
+    marginBottom: 6, 
+    borderWidth: 3, 
+    borderColor: '#fff', 
+    zIndex: 2,
+    shadowColor: '#8BC500',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  timelineTime: { 
+    fontSize: 13, 
+    color: '#666', 
+    fontWeight: '600',
+    marginTop: 2 
+  },
+  timelineCardCol: { 
+    flex: 1, 
+    paddingRight: 24 
+  },
+  card: { 
+    backgroundColor: '#fff', 
+    borderRadius: 16, 
+    padding: 20, 
+    marginBottom: 8, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.08, 
+    shadowRadius: 8, 
+    elevation: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: '#8BC500'
+  },
+  cardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  cardInfo: {
+    flex: 1
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12
+  },
+  cardLocation: { 
+    color: '#333', 
+    fontSize: 18, 
+    fontWeight: 'bold',
+    flex: 1
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E8',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#8BC500',
+    marginRight: 6
+  },
+  statusText: {
+    color: '#8BC500',
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  cardDetails: {
+    gap: 8
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  cardTrashType: { 
+    color: '#666', 
+    fontSize: 14,
+    fontWeight: '500'
+  },
+  cardRoute: { 
+    color: '#666', 
+    fontSize: 14,
+    fontWeight: '500'
+  },
+  cardFrequency: { 
+    color: '#666', 
+    fontSize: 14,
+    fontWeight: '500'
+  },
+  cardAction: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#F0F8F0'
+  },
+  cardEmpty: { 
+    backgroundColor: '#f8f9fa', 
+    borderRadius: 16, 
+    height: 80, 
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'dashed'
+  },
+  emptyCardContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  emptyCardText: {
+    color: '#999',
+    fontSize: 14,
+    marginTop: 8,
+    fontWeight: '500'
+  },
+  loadingContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingVertical: 20 
+  },
+  loadingText: { 
+    color: '#888', 
+    fontSize: 16, 
+    marginTop: 10 
+  }
 });
 
 
