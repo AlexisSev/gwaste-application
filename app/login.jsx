@@ -118,7 +118,7 @@ function LoginScreen() {
           )}
         </PrimaryButton>
           <Text style={styles.link}>
-            Don't have an account?{" "}
+            Don`t have an account?{" "}
             <Text style={styles.linkText} onPress={() => router.replace('/signup')}>
               Sign up here
             </Text>

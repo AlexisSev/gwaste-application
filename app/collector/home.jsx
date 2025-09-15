@@ -497,10 +497,10 @@ export default function LandingScreen() {
         </TouchableOpacity>
         {showDropdown && (
           <View style={styles.dropdownMenu}>
-            <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/profile'); }}>
+            <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/collector/profile'); }}>
               <Text style={styles.dropdownText}>My Profile</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/settings'); }}>
+            <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/collector/settings'); }}>
               <Text style={styles.dropdownText}>Settings</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>

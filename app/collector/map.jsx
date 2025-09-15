@@ -21,7 +21,7 @@ export default function CollectorMapScreen() {
   const [nextArea, setNextArea] = useState(null);
   const [collectedAreas, setCollectedAreas] = useState(new Set());
   const webviewRef = useRef(null);
-  const MAP_HEIGHT = Math.round(Dimensions.get('window').height * 0.55);
+  const MAP_HEIGHT = Math.round(Dimensions.get('window').height * 0.78);
   const { collector, loading: authLoading } = useCollectorAuth();
   const router = useRouter();
 
@@ -197,7 +197,7 @@ export default function CollectorMapScreen() {
   // 🔹 Step 1: When collector data is loaded, request GPS permission
   useEffect(() => {
     if (collector && !authLoading) {
-      addLog(`✅ Driver loaded: ${collector.driver || collector.firstName} (ID: ${collector.id})`);
+      // addLog(`✅ Driver loaded: ${collector.driver || collector.firstName} (ID: ${collector.id})`);
       requestLocationPermission();
     }
   }, [collector, authLoading]);
@@ -217,9 +217,9 @@ export default function CollectorMapScreen() {
   }, [mapInitialized, location]);
 
 
-  const addLog = (msg) => {
-    setLogs((prev) => [`${new Date().toLocaleTimeString()} - ${msg}`, ...prev].slice(0, 10));
-  };
+  // const addLog = (msg) => {
+  //   setLogs((prev) => [`${new Date().toLocaleTimeString()} - ${msg}`, ...prev].slice(0, 10));
+  // };
 
   // Function to update marker position smoothly
   const updateMarkerPosition = (newLat, newLng) => {
@@ -281,12 +281,12 @@ export default function CollectorMapScreen() {
   const startTracking = async () => {
     // Don't start tracking if collector data is not loaded yet
     if (!collector) {
-      addLog("⚠️ Cannot start GPS tracking: Driver data not loaded yet.");
+      // addLog("⚠️ Cannot start GPS tracking: Driver data not loaded yet.");
       return;
     }
 
     try {
-      addLog("🔄 Starting GPS tracking...");
+      // addLog("🔄 Starting GPS tracking...");
       await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 0 }, // every 2 sec
         async (loc) => {
@@ -303,7 +303,7 @@ export default function CollectorMapScreen() {
           updateMarkerPosition(coords.latitude, coords.longitude);
 
           if (!collector) {
-            addLog("⚠️ Driver data not loaded yet, skipping GPS update.");
+            // addLog("⚠️ Driver data not loaded yet, skipping GPS update.");
             return;
           }
 
@@ -314,14 +314,14 @@ export default function CollectorMapScreen() {
               longitude: coords.longitude,
               updated_at: new Date().toISOString(),
             });
-            addLog(`📡 Sent GPS for ${collector.driver || collector.firstName || "Driver"}: ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`);
+            // addLog(`📡 Sent GPS for ${collector.driver || collector.firstName || "Driver"}: ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`);
           } catch (err) {
-            addLog(`❌ Error sending GPS: ${err.message}`);
+            // addLog(`❌ Error sending GPS: ${err.message}`);
           }
         }
       );
     } catch (error) {
-      addLog(`⚠️ Error starting tracking: ${error.message}`);
+      // addLog(`⚠️ Error starting tracking: ${error.message}`);
     }
   };
 
@@ -353,8 +353,10 @@ export default function CollectorMapScreen() {
           <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
           <script>
             // Initialize map with default location
-            window.map = L.map('map', { zoomControl: false }).setView([8.4542, 124.6319], 15);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(window.map);
+            window.map = L.map('map', { zoomControl: false, attributionControl: false }).setView([8.4542, 124.6319], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: ''
+            }).addTo(window.map);
 
             // Create marker with smooth animation
             window.marker = L.marker([8.4542, 124.6319], {
@@ -406,7 +408,7 @@ export default function CollectorMapScreen() {
                 const data = JSON.parse(event.nativeEvent.data);
                 if (data.type === 'mapReady') {
                   setMapInitialized(true);
-                  addLog("🗺️ Map initialized and ready for tracking");
+                  // addLog("🗺️ Map initialized and ready for tracking");
                 }
               } catch (e) {
                 // Ignore parsing errors
@@ -458,15 +460,15 @@ export default function CollectorMapScreen() {
         </View>
       </View>
 
-      {/* Logs */}
-      <View style={styles.logContainer}>
+      {/* Logs - Commented out since GPS is working */}
+      {/* <View style={styles.logContainer}>
         <Text style={styles.logTitle}>GPS Logs:</Text>
         <ScrollView style={styles.logScroll}>
           {logs.map((log, index) => (
             <Text key={index} style={styles.logText}>{log}</Text>
           ))}
         </ScrollView>
-      </View>
+      </View> */}
     </View>
   );
 }
@@ -485,9 +487,9 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   mapContainer: {
-    marginHorizontal: 16,
-    marginTop: 32,
-    borderRadius: 12,
+    marginHorizontal: 0,
+    marginTop: 0,
+    borderRadius: 0,
     overflow: 'hidden',
     elevation: 5,
   },

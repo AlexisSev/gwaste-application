@@ -125,7 +125,55 @@ export default function ScheduleScreen() {
     }
   };
 
+  // Generate time intervals for areas based on fixed schedule (7:00 AM - 3:00 PM)
+  const generateTimeIntervals = (areas) => {
+    if (!areas || areas.length === 0) return [];
+    
+    try {
+      const startTime = '7:00';
+      const endTime = '15:00';
+      const start = new Date(`2000-01-01 ${startTime}`);
+      const end = new Date(`2000-01-01 ${endTime}`);
+      const totalMinutes = (end - start) / (1000 * 60);
+      
+      const intervalMinutes = Math.max(60, Math.min(90, Math.floor(totalMinutes / areas.length)));
+      
+      const intervals = [];
+      let currentTime = new Date(start);
+      
+      areas.forEach((area, index) => {
+        const intervalEnd = new Date(currentTime.getTime() + intervalMinutes * 60000);
+        
+        if (intervalEnd > end) {
+          intervalEnd.setTime(end.getTime());
+        }
+        
+        intervals.push({
+          area: area,
+          startTime: currentTime.toTimeString().slice(0, 5),
+          endTime: intervalEnd.toTimeString().slice(0, 5),
+          index: index + 1
+        });
+        
+        currentTime = new Date(intervalEnd);
+        
+        if (currentTime >= end) return;
+      });
+      
+      return intervals;
+    } catch (error) {
+      console.error('Error generating time intervals:', error);
+      return areas.map((area, index) => ({
+        area: area,
+        startTime: '7:00',
+        endTime: '15:00',
+        index: index + 1
+      }));
+    }
+  };
+
   const selectedRoute = routes.find(r => r.id === selectedRouteId) || null;
+  const timeIntervals = selectedRoute ? generateTimeIntervals(selectedRoute.areas || []) : [];
 
   const handleHomePress = () => {
     router.push('/resident');
@@ -208,24 +256,32 @@ export default function ScheduleScreen() {
             <View style={{ marginBottom: 12 }}>
               <Text style={styles.driverLabel}>Driver: <Text style={styles.driverValue}>{selectedRoute.driver || '—'}</Text></Text>
               {Array.isArray(selectedRoute.crew) && selectedRoute.crew.length > 0 && (
-                <View style={styles.crewRow}>
-                  {selectedRoute.crew.map((member, idx) => (
-                    <View key={idx} style={styles.crewChip}>
-                      <Text style={styles.crewChipText}>
-                        {typeof member === 'string' ? member : `${member?.firstName || ''} ${member?.lastName || ''}`.trim() || 'Crew'}
-                      </Text>
-                    </View>
-                  ))}
+                <View style={styles.crewContainer}>
+                  <Text style={styles.driverLabel}>Crew: </Text>
+                  <View style={styles.crewRow}>
+                    {selectedRoute.crew.map((member, idx) => (
+                      <View key={idx} style={styles.crewChip}>
+                        <Text style={styles.crewChipText}>
+                          {typeof member === 'string' ? member : `${member?.firstName || ''} ${member?.lastName || ''}`.trim() || 'Crew'}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
               )}
             </View>
 
             {Array.isArray(selectedRoute.areas) && selectedRoute.areas.length > 0 ? (
               <View style={styles.areaList}>
-                {selectedRoute.areas.map((area, idx) => (
-                  <View key={`${area}-${idx}`} style={styles.areaItem}>
-                    <View style={styles.areaBadge}><Text style={styles.areaBadgeText}>{idx + 1}</Text></View>
-                    <Text style={styles.areaName}>{area}</Text>
+                {timeIntervals.map((interval, idx) => (
+                  <View key={`${interval.area}-${idx}`} style={styles.areaItem}>
+                    <View style={styles.areaBadge}><Text style={styles.areaBadgeText}>{interval.index}</Text></View>
+                    <View style={styles.areaContent}>
+                      <Text style={styles.areaName}>{interval.area}</Text>
+                      <Text style={styles.areaTime}>
+                        Estimated: {formatSingleTime(interval.startTime)} - {formatSingleTime(interval.endTime)}
+                      </Text>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -299,14 +355,17 @@ const styles = StyleSheet.create({
   timePillText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   driverLabel: { fontSize: 14, color: '#374151', marginBottom: 6 },
   driverValue: { fontWeight: '700', color: '#1F2937' },
-  crewRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  crewContainer: { flexDirection: 'row', alignItems: 'flex-start', flexWrap: 'wrap' },
+  crewRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, flex: 1 },
   crewChip: { backgroundColor: '#E8F5E9', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
   crewChipText: { fontSize: 12, color: '#2E7D32', fontWeight: '600' },
   areaList: { gap: 8 },
   areaItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F6F7E8', borderRadius: 10, padding: 12 },
   areaBadge: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#E3F2E8', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   areaBadgeText: { color: '#2E7D32', fontWeight: '700', fontSize: 14 },
-  areaName: { fontSize: 16, color: '#1F2937', fontWeight: '600' },
+  areaContent: { flex: 1 },
+  areaName: { fontSize: 16, color: '#1F2937', fontWeight: '600', marginBottom: 2 },
+  areaTime: { fontSize: 12, color: '#4CAF50', fontWeight: '600' },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
