@@ -699,9 +699,9 @@ export default function ResidentIndex() {
           </View>
 
           {/* Report Concern Button */}
-          <TouchableOpacity style={styles.reportConcernButton}>
+          {/* <TouchableOpacity style={styles.reportConcernButton}>
             <Text style={styles.reportConcernText}>Report a Concern</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1096,20 +1096,20 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
-  reportConcernButton: {
-    backgroundColor: '#FF4444',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
+  // reportConcernButton: {
+  //   backgroundColor: '#FF4444',
+  //   paddingVertical: 16,
+  //   borderRadius: 12,
+  //   alignItems: 'center',
+  //   shadowColor: '#000',
+  //   shadowOffset: {
+  //     width: 0,
+  //     height: 2,
+  //   },
+  //   shadowOpacity: 0.1,
+  //   shadowRadius: 4,
+  //   elevation: 3,
+  // },
   reportConcernText: {
     color: '#fff',
     fontSize: 16,

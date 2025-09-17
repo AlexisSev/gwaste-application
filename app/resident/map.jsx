@@ -38,24 +38,25 @@ export default function MapScreen() {
   }, [params?.pickupType]);
 
   const defaultLocation = {
-    latitude: 8.4542,
-    longitude: 124.6319,
+    latitude: 11.033333,
+    longitude: 124.0,
     latitudeDelta: 0.01,
     longitudeDelta: 0.01,
   };
 
   // Function to update user location marker smoothly
-  const updateUserLocation = (newLat, newLng) => {
+  const updateUserLocation = (newLat, newLng, shouldPan = false) => {
     if (webviewRef.current && mapInitialized) {
       const script = `
         if (window.userMarker && window.map) {
-          // Smooth animation to new position
+          // Update marker position
           window.userMarker.setLatLng([${newLat}, ${newLng}]);
-          // Smooth pan to follow the user
+          ${shouldPan ? `
+          // Only pan if explicitly requested (e.g., initial load)
           window.map.panTo([${newLat}, ${newLng}], {
             animate: true,
             duration: 1.0
-          });
+          });` : ''}
         }
       `;
       webviewRef.current.injectJavaScript(script);
@@ -517,7 +518,7 @@ export default function MapScreen() {
   // 🔹 Update user location when location changes
   useEffect(() => {
     if (mapInitialized && location) {
-      updateUserLocation(location.latitude, location.longitude);
+      updateUserLocation(location.latitude, location.longitude, false);
     }
   }, [location, mapInitialized]);
 
@@ -672,23 +673,17 @@ export default function MapScreen() {
           <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
           <script>
             // Initialize map with default location
-            window.map = L.map('map', { attributionControl: false, zoomControl: false }).setView([8.4542, 124.6319], 15);
+            window.map = L.map('map', { attributionControl: false, zoomControl: false }).setView([11.033333, 124.0], 15);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution: '&copy; OpenStreetMap contributors' }).addTo(window.map);
 
-            // Create user location marker: green location pin with label "You"
-            window.userMarker = L.marker([8.4542, 124.6319], {
-              icon: L.divIcon({
-                className: 'custom-icon',
-                html: '<div class="user-marker">\
-                        <span class="user-label">You</span>\
-                        <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">\
-                          <path fill="#4CAF50" d="M12 0c6.627 0 12 5.373 12 12 0 8.284-12 24-12 24S0 20.284 0 12C0 5.373 5.373 0 12 0z"/>\
-                          <circle cx="12" cy="12" r="5" fill="#E8F5E9"/>\
-                        </svg>\
-                      </div>',
-                iconSize: [60, 50],
-                iconAnchor: [30, 50]
-              })
+            // Create user location marker: simple blue circle with white border
+            window.userMarker = L.circleMarker([11.033333, 124.0], {
+              radius: 8,
+              fillColor: '#2196F3',
+              color: '#ffffff',
+              weight: 3,
+              opacity: 1,
+              fillOpacity: 0.8
             }).addTo(window.map);
 
             // Initialize empty arrays for dynamic content
@@ -718,7 +713,7 @@ export default function MapScreen() {
                   setMapInitialized(true);
                   // Set initial data when map is ready
                   if (location) {
-                    updateUserLocation(location.latitude, location.longitude);
+                    updateUserLocation(location.latitude, location.longitude, true);
                   }
                   if (routeCoords.length > 0) {
                     updateRoute(routeCoords);

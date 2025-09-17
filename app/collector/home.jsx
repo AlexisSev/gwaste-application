@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { addDoc, collection, getDocs, query, serverTimestamp, where } from 'firebase/firestore';

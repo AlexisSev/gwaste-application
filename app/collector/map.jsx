@@ -26,8 +26,8 @@ export default function CollectorMapScreen() {
   const router = useRouter();
 
   const defaultLocation = {
-    latitude: 8.4542,
-    longitude: 124.6319,
+    latitude: 11.033333,
+    longitude: 124.0,
     latitudeDelta: 0.01,
     longitudeDelta: 0.01,
   };
@@ -353,13 +353,13 @@ export default function CollectorMapScreen() {
           <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
           <script>
             // Initialize map with default location
-            window.map = L.map('map', { zoomControl: false, attributionControl: false }).setView([8.4542, 124.6319], 15);
+            window.map = L.map('map', { zoomControl: false, attributionControl: false }).setView([11.033333, 124.0], 15);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
               attribution: ''
             }).addTo(window.map);
 
             // Create marker with smooth animation
-            window.marker = L.marker([8.4542, 124.6319], {
+            window.marker = L.marker([11.033333, 124.0], {
               icon: L.divIcon({
                 className: 'custom-icon',
                 html: "🚛",

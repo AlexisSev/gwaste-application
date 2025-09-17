@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -218,9 +220,8 @@ export default function ResidentChatBot() {
     schedules: {
       keywords: ['schedule', 'pickup', 'collection', 'when', 'time', 'day', 'weekly'],
       responses: [
-        'Waste collection happens every Tuesday and Friday from 7 AM to 5 PM. Please place your bins at the curb by 6:30 AM.',
-        'Collection schedule: Tuesday & Friday, 7 AM - 5 PM. Place bins by 6:30 AM for pickup.',
-        'Your waste is collected twice weekly - Tuesdays and Fridays. Set out bins by 6:30 AM.'
+        'Waste collection happens every day from 7 AM to 3 PM. Please prepare your waste for collection outside your house.',
+        'Your waste is collected every day from - Mondays - Fridays.',
       ],
       suggestions: ['What if I miss collection?', 'Holiday schedule', 'Special pickup requests']
     },
@@ -236,7 +237,7 @@ export default function ResidentChatBot() {
     reporting: {
       keywords: ['report', 'problem', 'issue', 'complaint', 'missed', 'damage', 'spill'],
       responses: [
-        'I can help you report problems to the city! Let me guide you step by step.\n\n**STEP 1:** What type of problem do you have?\n\n• Garbage truck didn\'t come\n• Broken garbage bin\n• Spill or mess\n• Noise problem\n• Something else\n\nJust tell me what\'s wrong and I\'ll help you report it.',
+        'I can help you report issues! Let me guide you step by step.\n\n**STEP 1:** What type of problem do you have?\n\n• Garbage truck didn\'t come\n• Broken garbage bin\n• Spill or mess\n• Noise problem\n• Something else\n\nJust tell me what\'s wrong and I\'ll help you report it.',
         'Let\'s report your problem to the city officials. I\'ll make it easy for you!\n\n**What happened?** Just describe the problem in your own words. For example:\n• "The garbage truck didn\'t pick up my bins"\n• "My garbage bin is broken"\n• "There\'s a spill on my street"\n\nI\'ll take care of the rest!',
         'I\'m here to help you report problems to the city. Don\'t worry - I\'ll guide you through each step.\n\n**First, tell me:** What problem do you need to report?'
       ],
@@ -542,7 +543,7 @@ export default function ResidentChatBot() {
             <ThemedView style={styles.sheetInner}>
               <View style={styles.sheetHeader}>
                 <View style={styles.headerLeft}>
-                  <FontAwesome5 name="robot" size={20} color="#2563EB" style={styles.headerIcon} />
+                  <FontAwesome5 name="robot" size={20} color="#22c55e" style={styles.headerIcon} />
                   <ThemedText type="title" style={styles.headerTitle}>Waste Assistant</ThemedText>
                 </View>
                 <Pressable onPress={() => setOpen(false)} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close chat">
@@ -729,7 +730,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 4
   },
   userBubble: { 
-    backgroundColor: '#2563EB',
+    backgroundColor: 'rgba(118, 203, 143, 0.6)',
     borderBottomRightRadius: 4
   },
   bubbleText: { 
@@ -737,13 +738,13 @@ const styles = StyleSheet.create({
     fontSize: 15
   },
   assistantText: { color: '#1F2937' },
-  userText: { color: '#ffffff' },
+  userText: { color: 'rgba(0, 0, 0, 0.6)' },
   timestamp: {
     fontSize: 11,
     marginTop: 4,
-    opacity: 0.7
+    opacity: 0.9
   },
-  userTimestamp: { color: 'rgba(255,255,255,0.8)' },
+  userTimestamp: { color: 'rgba(19, 19, 19, 0.8)' },
   assistantTimestamp: { color: 'rgba(31,41,55,0.6)' },
   suggestionsContainer: {
     flexDirection: 'row',
@@ -753,19 +754,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4
   },
   suggestionChip: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: 'rgba(7, 183, 63, 0.6)',
+    opacity: 0.8,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginRight: 8,
     marginBottom: 8,
     borderWidth: 2,
-    borderColor: 'rgba(0,0,0,0.15)',
+    borderColor: 'rgba(11, 62, 36, 0.15)',
     minHeight: 44
   },
   suggestionText: {
     fontSize: 15,
-    color: '#374151',
+    color: '#ffffff',
     fontWeight: '500',
     textAlign: 'center'
   },
@@ -862,7 +864,7 @@ const styles = StyleSheet.create({
     minHeight: 56,
     minWidth: 56,
     borderRadius: 20,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#22c55e',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 3,
@@ -877,5 +879,4 @@ const styles = StyleSheet.create({
     shadowOpacity: 0
   }
 });
-
 
