@@ -729,7 +729,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 4
   },
   userBubble: { 
-    backgroundColor: '#2563EB',
+    backgroundColor: 'rgba(118, 203, 143, 0.6)',
     borderBottomRightRadius: 4
   },
   bubbleText: { 
@@ -737,13 +737,13 @@ const styles = StyleSheet.create({
     fontSize: 15
   },
   assistantText: { color: '#1F2937' },
-  userText: { color: '#ffffff' },
+  userText: { color: 'rgba(0, 0, 0, 0.6)' },
   timestamp: {
     fontSize: 11,
     marginTop: 4,
-    opacity: 0.7
+    opacity: 0.9
   },
-  userTimestamp: { color: 'rgba(255,255,255,0.8)' },
+  userTimestamp: { color: 'rgba(19, 19, 19, 0.8)' },
   assistantTimestamp: { color: 'rgba(31,41,55,0.6)' },
   suggestionsContainer: {
     flexDirection: 'row',
@@ -753,19 +753,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4
   },
   suggestionChip: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: 'rgba(7, 183, 63, 0.6)',
+    opacity: 0.8,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginRight: 8,
     marginBottom: 8,
     borderWidth: 2,
-    borderColor: 'rgba(0,0,0,0.15)',
+    borderColor: 'rgba(11, 62, 36, 0.15)',
     minHeight: 44
   },
   suggestionText: {
     fontSize: 15,
-    color: '#374151',
+    color: '#ffffff',
     fontWeight: '500',
     textAlign: 'center'
   },
@@ -862,7 +863,7 @@ const styles = StyleSheet.create({
     minHeight: 56,
     minWidth: 56,
     borderRadius: 20,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#22c55e',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 3,
