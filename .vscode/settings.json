@@ -1,4 +1,13 @@
 {
+  "deno.enable": true,
+  "deno.unstable": true,
+  "deno.path": "C\\:\\path\\to\\deno.exe",
+  "deno.lint": true,
+  "deno.suggest.imports.hosts": {
+    "https://deno.land": true,
+    "https://cdn.deno.land": true,
+    "https://raw.githubusercontent.com": true
+  },
   "editor.codeActionsOnSave": {
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit",

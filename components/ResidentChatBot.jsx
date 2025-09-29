@@ -2,13 +2,11 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
 import * as Location from 'expo-location';
-import Constants from 'expo-constants';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
-import { supabase } from '../services/supabaseClient';
 import { callGemini } from '../services/gemini';
+import { supabase } from '../services/supabaseClient';
 import { ThemedText } from './ThemedText';
 // eslint-disable-next-line import/namespace
 import { ThemedView } from './ThemedView';
@@ -59,81 +57,7 @@ export default function ResidentChatBot() {
     return true;
   };
 
-  // Gemini client-side integration (text + optional image)
-  async function fetchGeminiResponse(prompt, imageAsset = null) {
-    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY
-      || Constants.expoConfig?.extra?.EXPO_PUBLIC_GEMINI_API_KEY
-      || Constants.manifest?.extra?.EXPO_PUBLIC_GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn('Gemini API key not found. Ensure EXPO_PUBLIC_GEMINI_API_KEY is set and the dev server was restarted.');
-      throw new Error('Missing EXPO_PUBLIC_GEMINI_API_KEY');
-    }
-
-    const systemPrompt = [
-      'You are a friendly Waste Management Assistant for a city waste app.',
-      'Goals:',
-      '- Answer questions about collection schedules, sorting guidelines, reporting issues, and centers.',
-      '- Be concise and practical. Use clear bullet points when helpful.',
-      '- If user asks to submit a report, acknowledge and summarize, but do not invent IDs; leave system to handle submission.',
-      '- If user sends an image, help identify likely waste type and how to dispose of it safely.',
-      'Constraints:',
-      '- Do not mention being an AI model. Do not invent city-specific data; if unsure, suggest checking the app or contacting support.',
-    ].join('\n');
-
-    const parts = [];
-    if (prompt && prompt.length > 0) {
-      parts.push({ text: prompt });
-    }
-
-    if (imageAsset && imageAsset.uri) {
-      try {
-        const base64 = await FileSystem.readAsStringAsync(imageAsset.uri, { encoding: 'base64' });
-        const mimeType = imageAsset.type || 'image/jpeg';
-        parts.push({
-          inline_data: {
-            mime_type: mimeType,
-            data: base64,
-          }
-        });
-      } catch (e) {
-        console.warn('Failed to read image as base64, sending text only.', e);
-      }
-    }
-
-    const body = {
-      system_instruction: {
-        role: 'system',
-        parts: [{ text: systemPrompt }]
-      },
-      contents: [
-        {
-          role: 'user',
-          parts,
-        },
-      ],
-    };
-
-    console.log('[Gemini] Calling model gemini-1.5-flash');
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }
-    );
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.warn('[Gemini] HTTP error', resp.status, text);
-      throw new Error(`Gemini HTTP ${resp.status}: ${text}`);
-    }
-
-    const data = await resp.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not generate a response.';
-    console.log('[Gemini] Response received');
-    return text;
-  }
+  // Remote model integration is handled by `callGemini` in services/gemini.js.
 
   const pickImage = async () => {
     const hasPermission = await requestPermissions();
@@ -483,25 +407,37 @@ export default function ResidentChatBot() {
 
     // Simulate a more realistic delay with typing animation
     setTimeout(async () => {
-      let responseText = '';
-      let responseCategory = undefined;
+  let responseText = '';
+  let responseCategory = undefined;
+  let responseSuggestions = [];
 
-      // First try Supabase Edge Function (server-side Gemini); then direct Gemini; then local rule-based
+      // Try server-side / remote Gemini via callGemini. If it returns null, fallback to local logic.
       try {
-        const edgeResult = await callGemini(prompt);
-        if (edgeResult) {
-          responseText = typeof edgeResult === 'string'
-            ? edgeResult
-            : (edgeResult?.text || edgeResult?.message || JSON.stringify(edgeResult));
+  const remote = await callGemini(prompt, imageForThisMessage, conversationContext);
+        if (remote) {
+          if (typeof remote === 'string') {
+            responseText = remote;
+          } else {
+            responseText = remote.text || remote.message || JSON.stringify(remote);
+            // If suggestions were included, capture them
+            if (remote.suggestions && Array.isArray(remote.suggestions)) {
+              responseCategory = responseCategory || remote.category;
+              // attach suggestions to assistant later
+              responseSuggestions = remote.suggestions;
+            }
+          }
         } else {
-          responseText = await fetchGeminiResponse(prompt, imageForThisMessage);
+          const local = imageForThisMessage && !prompt
+            ? getLocalResponse('image shared', conversationContext)
+            : getLocalResponse(prompt, conversationContext);
+          responseText = local.text;
+          responseCategory = local.category;
         }
       } catch (e) {
-        // Fallback to local rule-based
         const local = imageForThisMessage && !prompt
           ? getLocalResponse('image shared', conversationContext)
           : getLocalResponse(prompt, conversationContext);
-        console.warn('[Gemini] Falling back to local response:', e?.message || e);
+        console.warn('[Assistant] Falling back to local response due to error:', e?.message || e);
         responseText = local.text;
         responseCategory = local.category;
       }
@@ -534,7 +470,7 @@ export default function ResidentChatBot() {
         role: 'assistant', 
         text: responseText,
         timestamp: new Date(),
-        suggestions: [],
+        suggestions: responseSuggestions && responseSuggestions.length > 0 ? responseSuggestions : [],
         category: responseCategory
       };
       setMessages(prev => [...prev, assistantMessage]);

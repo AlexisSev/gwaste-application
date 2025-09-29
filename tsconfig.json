@@ -11,6 +11,7 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "supabase/functions/**/*.d.ts",
     "app/collector/_layout.jsx",
     "app/+not-found.jsx",
     "app/_layout.jsx"
