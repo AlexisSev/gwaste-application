@@ -1,15 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Lock, User } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image as RNImage, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ThemedText } from '../components/ThemedText';
 import InputField from '../components/ui/InputField';
 import PrimaryButton from '../components/ui/PrimaryButton';
-import { db } from '../firebase';
-import { useCollectorAuth } from '../hooks/useCollectorAuth';
+import { useCollectorAuth } from '../hooks/useCollectorAuthSupabase';
 import { vw } from '../utils/responsive';
+import { supabase } from '../services/supabaseClient';
 
 function LoginScreen() {
   const [firstName, setFirstName] = useState('');
@@ -27,41 +26,28 @@ function LoginScreen() {
     
     setLoading(true);
     try {
-      // Try resident login first (query by firstName, then verify password)
-      const residentsRef = collection(db, 'residents');
-      const firstExactQuery = query(residentsRef, where('firstName', '==', firstName.trim()));
-      let residentSnapshot = await getDocs(firstExactQuery);
-
+      // Try resident login first via Supabase
+      const f = firstName.trim();
+      const p = password.trim();
       let residentMatch = null;
-      if (!residentSnapshot.empty) {
-        residentSnapshot.forEach((doc) => {
-          const data = doc.data();
-          if (data.password === password) {
-            residentMatch = { id: doc.id, ...data };
-          }
-        });
-      }
-
-      // Fallback: case-insensitive scan if no exact match
-      if (!residentMatch) {
-        const allResidents = await getDocs(residentsRef);
-        allResidents.forEach((doc) => {
-          const data = doc.data();
-          const firstLower = data.firstName ? String(data.firstName).trim().toLowerCase() : '';
-          if (firstLower === firstName.trim().toLowerCase() && data.password === password) {
-            residentMatch = { id: doc.id, ...data };
-          }
-        });
+      const { data: resResidents, error: resErr } = await supabase
+        .from('residents')
+        .select('*')
+        .ilike('first_name', f)
+        .limit(20);
+      if (resErr) throw resErr;
+      if (Array.isArray(resResidents)) {
+        residentMatch = resResidents.find(r => String(r.first_name || '').trim().toLowerCase() === f.toLowerCase() && String(r.password || '').trim() === p) || null;
       }
 
       if (residentMatch) {
-        Alert.alert('Success', `Welcome, ${residentMatch.firstName}!`);
+        Alert.alert('Success', `Welcome, ${residentMatch.first_name || f}!`);
         router.replace({
           pathname: '/resident',
           params: {
-            firstName: residentMatch.firstName,
+            firstName: residentMatch.first_name || f,
             purok: residentMatch.purok,
-            address: residentMatch.address,
+            address: residentMatch.resident_address || residentMatch.address,
           }
         });
         return;
@@ -82,7 +68,6 @@ function LoginScreen() {
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         {/* Logo */}

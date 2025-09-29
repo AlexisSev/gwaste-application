@@ -13,9 +13,8 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { useResidentAuth } from '../../hooks/useResidentAuth';
+import { supabase } from '../../services/supabaseClient';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -25,15 +24,21 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (resident?.id) {
-      // If resident data is already available, use it directly
-      if (resident.firstName) {
-        setResidentData(resident);
+      if (resident.first_name) {
+        // Map Supabase fields to the UI's expected shape
+        setResidentData({
+          firstName: resident.first_name,
+          lastName: resident.last_name,
+          purok: resident.purok,
+          address: resident.resident_address,
+          phoneNumber: resident.phone_number,
+          createdAt: resident.created_at || null,
+        });
         setLoading(false);
       } else {
         loadResidentData();
       }
     } else {
-      // If no resident ID, stop loading and show error
       setLoading(false);
       console.log('No resident ID found:', resident);
     }
@@ -42,9 +47,21 @@ export default function ProfileScreen() {
   const loadResidentData = async () => {
     try {
       setLoading(true);
-      const residentDoc = await getDoc(doc(db, 'residents', resident.id));
-      if (residentDoc.exists()) {
-        setResidentData(residentDoc.data());
+      const { data, error } = await supabase
+        .from('residents')
+        .select('*')
+        .eq('id', resident.id)
+        .single();
+      if (error) throw error;
+      if (data) {
+        setResidentData({
+          firstName: data.first_name,
+          lastName: data.last_name,
+          purok: data.purok,
+          address: data.resident_address,
+          phoneNumber: data.phone_number,
+          createdAt: data.created_at || null,
+        });
       }
     } catch (error) {
       console.error('Error loading resident data:', error);
@@ -220,8 +237,8 @@ export default function ProfileScreen() {
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Member Since</Text>
                 <Text style={styles.infoValue}>
-                  {residentData?.createdAt 
-                    ? new Date(residentData.createdAt.seconds * 1000).toLocaleDateString()
+                  {residentData?.createdAt
+                    ? new Date(residentData.createdAt).toLocaleDateString()
                     : 'Unknown'
                   }
                 </Text>

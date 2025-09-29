@@ -1,7 +1,6 @@
 /* eslint-disable import/first */
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -23,7 +22,7 @@ export const options = {
 import { ThemedText } from "../components/ThemedText";
 import InputField from "../components/ui/InputField";
 import PrimaryButton from "../components/ui/PrimaryButton";
-import { db } from "../firebase";
+import { supabase } from "../services/supabaseClient";
 
 export default function ResidentSignup() {
   const router = useRouter();
@@ -64,17 +63,17 @@ export default function ResidentSignup() {
 
     setLoading(true);
     try {
-      const combinedFullName = `${firstName.trim()} ${lastName.trim()}`.trim();
-      await addDoc(collection(db, "residents"), {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        fullName: combinedFullName,
-        address: address.trim(),
-        purok: purok.trim(),
-        phone: phone.trim(),
-        password: password.trim(),
-        createdAt: serverTimestamp(),
-      });
+      const { error } = await supabase
+        .from('residents')
+        .insert({
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          resident_address: address.trim(),
+          purok: purok.trim(),
+          phone_number: phone.trim(),
+          password: password.trim(),
+        });
+      if (error) throw error;
 
       Alert.alert("Success", "Signup successful. You can now log in.");
       router.replace("/login");

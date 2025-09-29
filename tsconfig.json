@@ -11,8 +11,7 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts",
+    "supabase/functions/**/*.d.ts",
     "app/collector/_layout.jsx",
     "app/+not-found.jsx",
     "app/_layout.jsx"

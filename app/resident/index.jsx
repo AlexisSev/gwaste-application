@@ -4,12 +4,9 @@
 import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
-import { signOut } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { auth, db } from '../../firebase';
 import { supabase } from '../../services/supabaseClient';
 
 export default function ResidentIndex() {
@@ -74,38 +71,22 @@ export default function ResidentIndex() {
   const loadCollectionStatus = async () => {
     try {
       const today = new Date().toISOString().split('T')[0];
-      
-      // Get collections for today
-      const collectionsQuery = query(
-        collection(db, 'collections'),
-        where('collectedDate', '==', today)
-      );
-      
-      const collectionsSnapshot = await getDocs(collectionsQuery);
+      const { data: collections, error } = await supabase
+        .from('collections')
+        .select('areas_collected, collected_at')
+        .eq('collected_date', today);
+      if (error) throw error;
       const collectedSet = new Set();
       const collectedAtByArea = new Map();
-      
-      collectionsSnapshot.forEach(doc => {
-        const data = doc.data();
-        if (data.area) {
-          collectedSet.add(data.area);
-          // Prefer explicit collectedAt timestamp if present
-          let ts = null;
-          if (data.collectedAt?.seconds) {
-            ts = new Date(data.collectedAt.seconds * 1000).toISOString();
-          } else if (typeof data.collectedAt === 'string') {
-            ts = data.collectedAt;
-          } else if (data.timestamp) {
-            // fallback to numeric timestamp if provided
-            ts = new Date(Number(data.timestamp)).toISOString();
+      (collections || []).forEach(row => {
+        const arr = Array.isArray(row.areas_collected) ? row.areas_collected : [];
+        const ts = row.collected_at || (row.timestamp ? new Date(Number(row.timestamp)).toISOString() : null);
+        arr.forEach(area => {
+          if (area) {
+            collectedSet.add(area);
+            if (ts && !collectedAtByArea.has(area)) collectedAtByArea.set(area, ts);
           }
-          if (ts) {
-            // Only set once to avoid "moving" timestamps
-            if (!collectedAtByArea.has(data.area)) {
-              collectedAtByArea.set(data.area, ts);
-            }
-          }
-        }
+        });
       });
       
       setCollectedAreas(collectedSet);
@@ -133,34 +114,14 @@ export default function ResidentIndex() {
   const loadNotifications = async () => {
     try {
       if (!residentData?.purok) return;
-      
-      // Avoid requiring a composite index by removing server-side orderBy.
-      // We'll sort by timestamp on the client and take the latest 10.
-      const notificationsQuery = query(
-        collection(db, 'notifications'),
-        where('area', '==', residentData.purok)
-      );
-      
-      const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
-        const notificationList = [];
-        snapshot.forEach(doc => {
-          notificationList.push({
-            id: doc.id,
-            ...doc.data()
-          });
-        });
-
-        // Sort by timestamp desc on client and limit to 10
-        notificationList.sort((a, b) => {
-          const ta = a.timestamp?.seconds ? a.timestamp.seconds * 1000 + (a.timestamp.nanoseconds || 0) / 1e6 : new Date(a.timestamp || 0).getTime();
-          const tb = b.timestamp?.seconds ? b.timestamp.seconds * 1000 + (b.timestamp.nanoseconds || 0) / 1e6 : new Date(b.timestamp || 0).getTime();
-          return tb - ta;
-        });
-
-        setNotifications(notificationList.slice(0, 10));
-      });
-      
-      return unsubscribe;
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('area', residentData.purok);
+      if (error) throw error;
+      const list = (data || []).map(n => ({ ...n }));
+      list.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+      setNotifications(list.slice(0, 10));
     } catch (error) {
       console.error('Error loading notifications:', error);
     }
@@ -191,7 +152,7 @@ export default function ResidentIndex() {
   // Fetch collectors and compute nearest distance to user
   const updateNearestTruckDistance = async (currentLoc) => {
     try {
-      const { data, error } = await supabase.from('locations').select('*');
+      const { data, error } = await supabase.from('trucklocation').select('*');
       if (error) throw error;
       const active = getActiveCollectors(data);
       if (!currentLoc || active.length === 0) {
@@ -313,16 +274,14 @@ export default function ResidentIndex() {
     const fetchCollectionSchedule = async () => {
       try {
         setScheduleLoading(true);
-        // Get routes that include the resident's area
-        const routesQuery = query(collection(db, 'routes'));
-        const routesSnapshot = await getDocs(routesQuery);
+        const { data: routes, error } = await supabase.from('routes').select('*');
+        if (error) throw error;
         
         const allPickups = [];
         const todaySchedule = [];
         const today = new Date();
         
-        routesSnapshot.forEach(docSnap => {
-          const data = docSnap.data();
+        (routes || []).forEach(data => {
           // console.log('Route data:', data);
           // console.log('Route areas:', data.areas);
           // console.log('Resident purok:', residentData?.purok);
@@ -423,24 +382,12 @@ export default function ResidentIndex() {
     const loadResidentData = async () => {
       try {
         setLoading(true);
-        // First check if we have data from params
         if (params.firstName && params.purok && params.address) {
           setResidentData({
             firstName: params.firstName,
             purok: params.purok,
             address: params.address
           });
-        } else {
-          // If no params, try to get data from Firebase
-          const user = auth.currentUser;
-          if (user) {
-            const residentRef = doc(db, 'residents', user.uid);
-            const residentSnap = await getDoc(residentRef);
-            
-            if (residentSnap.exists()) {
-              setResidentData(residentSnap.data());
-            }
-          }
         }
         
         // Fetch collection schedule data
@@ -507,14 +454,7 @@ export default function ResidentIndex() {
         {
           text: "Logout",
           style: "destructive",
-          onPress: async () => {
-            try {
-              await signOut(auth);
-              router.push('/login');
-            } catch (error) {
-              console.error('Error signing out:', error);
-            }
-          }
+          onPress: () => router.push('/login')
         }
       ]
     );

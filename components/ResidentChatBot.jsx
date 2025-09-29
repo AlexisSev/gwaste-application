@@ -3,10 +3,10 @@
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
-import { db } from '../firebase';
+import { callGemini } from '../services/gemini';
+import { supabase } from '../services/supabaseClient';
 import { ThemedText } from './ThemedText';
 // eslint-disable-next-line import/namespace
 import { ThemedView } from './ThemedView';
@@ -19,7 +19,7 @@ export default function ResidentChatBot() {
       role: 'assistant', 
       text: 'Hello! I\'m here to help you with waste collection. I can help you with:\n\n• Collection schedules\n• How to sort your waste\n• Report problems to the city\n• Answer questions\n\nWhat would you like help with today?',
       timestamp: new Date(),
-      suggestions: ['When is my pickup?', 'How do I sort waste?', 'Report a problem', 'Need help?']
+      suggestions: []
     }
   ]);
   const [input, setInput] = useState('');
@@ -56,6 +56,8 @@ export default function ResidentChatBot() {
     }
     return true;
   };
+
+  // Remote model integration is handled by `callGemini` in services/gemini.js.
 
   const pickImage = async () => {
     const hasPermission = await requestPermissions();
@@ -157,7 +159,7 @@ export default function ResidentChatBot() {
       const reportPayload = {
         ...reportData,
         location: location,
-        submittedAt: serverTimestamp(),
+        submittedAt: new Date().toISOString(),
         status: 'pending',
         type: 'chatbot_report',
         images: reportData.images.map(img => ({
@@ -172,12 +174,17 @@ export default function ResidentChatBot() {
         }
       };
 
-      // Submit to Firebase
-      const reportsRef = collection(db, 'reports');
-      const docRef = await addDoc(reportsRef, reportPayload);
+      // Submit to Supabase
+      const { data, error } = await supabase
+        .from('reports')
+        .insert(reportPayload)
+        .select('id')
+        .single();
+      if (error) throw error;
+      const docId = data?.id || String(Date.now());
 
       // Send notification to admin
-      await notifyAdmin(docRef.id, reportPayload);
+      await notifyAdmin(docId, reportPayload);
 
       // Reset report data
       setReportData({
@@ -189,7 +196,7 @@ export default function ResidentChatBot() {
       });
       setIsReporting(false);
 
-      return docRef.id;
+      return docId;
     } catch (error) {
       console.error('Error submitting report:', error);
       setIsReporting(false);
@@ -199,18 +206,20 @@ export default function ResidentChatBot() {
 
   const notifyAdmin = async (reportId, reportData) => {
     try {
-      const notificationsRef = collection(db, 'admin_notifications');
-      await addDoc(notificationsRef, {
-        type: 'new_report',
-        reportId: reportId,
-        category: reportData.category,
-        urgency: reportData.urgency,
-        location: reportData.location,
-        submittedAt: serverTimestamp(),
-        message: `New ${reportData.category} report submitted via chatbot`,
-        status: 'unread',
-        priority: reportData.urgency === 'high' ? 'urgent' : 'normal'
-      });
+      const { error } = await supabase
+        .from('admin_notifications')
+        .insert({
+          type: 'new_report',
+          reportId: reportId,
+          category: reportData.category,
+          urgency: reportData.urgency,
+          location: reportData.location,
+          submittedAt: new Date().toISOString(),
+          message: `New ${reportData.category} report submitted via chatbot`,
+          status: 'unread',
+          priority: reportData.urgency === 'high' ? 'urgent' : 'normal'
+        });
+      if (error) throw error;
     } catch (error) {
       console.error('Error notifying admin:', error);
     }
@@ -223,7 +232,6 @@ export default function ResidentChatBot() {
         'Waste collection happens every day from 7 AM to 3 PM. Please prepare your waste for collection outside your house.',
         'Your waste is collected every day from - Mondays - Fridays.',
       ],
-      suggestions: ['What if I miss collection?', 'Holiday schedule', 'Special pickup requests']
     },
     sorting: {
       keywords: ['sort', 'recycle', 'categorize', 'bin', 'blue', 'green', 'black', 'where'],
@@ -232,7 +240,6 @@ export default function ResidentChatBot() {
         'Sorting guide:\n• Blue: Recyclables (paper, metal, clean plastic)\n• Green: Organics (food waste, yard trimmings)\n• Black: Everything else\n• Electronics: Drop-off centers only',
         'Waste sorting made easy:\n• Blue bin = Recyclables\n• Green bin = Organic waste\n• Black bin = General waste\n• Electronics = Special collection'
       ],
-      suggestions: ['What can\'t be recycled?', 'Contaminated items', 'Special materials']
     },
     reporting: {
       keywords: ['report', 'problem', 'issue', 'complaint', 'missed', 'damage', 'spill'],
@@ -241,7 +248,6 @@ export default function ResidentChatBot() {
         'Let\'s report your problem to the city officials. I\'ll make it easy for you!\n\n**What happened?** Just describe the problem in your own words. For example:\n• "The garbage truck didn\'t pick up my bins"\n• "My garbage bin is broken"\n• "There\'s a spill on my street"\n\nI\'ll take care of the rest!',
         'I\'m here to help you report problems to the city. Don\'t worry - I\'ll guide you through each step.\n\n**First, tell me:** What problem do you need to report?'
       ],
-      suggestions: ['Garbage truck didn\'t come', 'Broken garbage bin', 'Spill or mess', 'Noise problem', 'Help me report']
     },
     centers: {
       keywords: ['center', 'drop', 'location', 'where', 'electronics', 'hazardous', 'battery'],
@@ -250,7 +256,6 @@ export default function ResidentChatBot() {
         'Drop-off locations:\n• Downtown Center: 123 Main St\n• Northside Center: 456 Oak Ave\n• Eastside Center: 789 Pine Rd\n\nHours vary by location. Check our app for current hours.',
         'Find collection centers near you:\n• Downtown: 123 Main St\n• Northside: 456 Oak Ave\n• Eastside: 789 Pine Rd\n\nAll accept electronics, batteries, and hazardous waste.'
       ],
-      suggestions: ['Center hours', 'What they accept', 'Directions', 'Fees']
     },
     holidays: {
       keywords: ['holiday', 'christmas', 'thanksgiving', 'new year', 'delay', 'postpone'],
@@ -259,7 +264,6 @@ export default function ResidentChatBot() {
         'During holidays:\n• Major holidays delay collection by 1 day\n• Check our app for specific holiday schedules\n• Bins should still be out by 6:30 AM on collection days',
         'Holiday schedule: Major holidays delay pickup by 1 day. Check our app for current holiday information.'
       ],
-      suggestions: ['Specific holiday dates', 'Weather delays', 'Emergency collection']
     },
     general: {
       keywords: ['help', 'what can you do', 'assistant', 'support'],
@@ -268,7 +272,6 @@ export default function ResidentChatBot() {
         'I\'m here to help with:\n• Collection schedules and timing\n• Proper waste sorting\n• Problem reporting\n• Center locations\n• Holiday schedules\n• Any waste-related questions\n• Photo-based waste identification',
         'I assist with:\n• Schedules and pickup times\n• Sorting guidelines\n• Issue reporting\n• Center locations\n• Holiday information\n• General waste management help\n• Analyzing waste photos'
       ],
-      suggestions: ['Collection schedule', 'Sorting guide', 'Report problem', 'Find centers']
     },
     imageAnalysis: {
       keywords: ['image', 'photo', 'picture', 'identify', 'what is this', 'sort this'],
@@ -277,7 +280,6 @@ export default function ResidentChatBot() {
         'Thanks for sharing the photo! I can help you sort this waste properly:\n\n• Look for recycling symbols or numbers\n• Check if it\'s food waste or organic material\n• Consider if it\'s contaminated or clean\n• Determine if it needs special disposal\n\nWhat type of waste do you see in the image?',
         'Great photo! For proper sorting:\n\n• Clean recyclables → Blue bin\n• Food scraps/organics → Green bin\n• General waste → Black bin\n• Electronics/batteries → Collection center\n• Hazardous materials → Special disposal\n\nCan you tell me more about what\'s in the image?'
       ],
-      suggestions: ['How to sort this', 'Is this recyclable?', 'Report contamination', 'Find disposal center']
     }
   };
 
@@ -288,7 +290,7 @@ export default function ResidentChatBot() {
     if (lowerPrompt.includes('hello') || lowerPrompt.includes('hi') || lowerPrompt.includes('hey') || lowerPrompt.includes('good morning') || lowerPrompt.includes('good afternoon') || lowerPrompt.includes('good evening')) {
       return {
         text: 'Hello! I\'m your waste management assistant. How can I help you today?',
-        suggestions: ['Collection schedule', 'How to sort waste', 'Report a problem', 'Find collection centers']
+        suggestions: []
       };
     }
 
@@ -301,7 +303,7 @@ export default function ResidentChatBot() {
         const responseIndex = context.length > 0 ? context.length % data.responses.length : Math.floor(Math.random() * data.responses.length);
         return {
           text: data.responses[responseIndex],
-          suggestions: data.suggestions,
+          suggestions: [],
           category: category
         };
       }
@@ -311,7 +313,7 @@ export default function ResidentChatBot() {
     if (lowerPrompt.includes('missed') && (lowerPrompt.includes('collection') || lowerPrompt.includes('pickup') || lowerPrompt.includes('truck'))) {
       return {
         text: 'I understand - the garbage truck didn\'t come to pick up your bins. Let me help you report this.\n\n**STEP 2:** Tell me more details:\n\n• What day was pickup supposed to happen?\n• What\'s your address or area?\n• Did you put your bins out on time?\n\nJust tell me what you know, and I\'ll send this to the city officials.',
-        suggestions: ['Yes, submit my report', 'Add my address', 'Take a photo', 'Need help?'],
+        suggestions: [],
         category: 'reporting',
         reportCategory: 'missed_collection'
       };
@@ -320,7 +322,7 @@ export default function ResidentChatBot() {
     if (lowerPrompt.includes('damaged') && (lowerPrompt.includes('bin') || lowerPrompt.includes('container') || lowerPrompt.includes('broken'))) {
       return {
         text: 'I\'ll help you report your broken garbage bin to the city.\n\n**STEP 2:** Tell me about the damage:\n\n• What\'s wrong with the bin? (cracked, broken lid, etc.)\n• Where is the bin located?\n• How long has it been broken?\n\nDon\'t worry about taking photos - just describe what\'s wrong.',
-        suggestions: ['Yes, submit my report', 'Add my location', 'Take a photo', 'Need help?'],
+        suggestions: [],
         category: 'reporting',
         reportCategory: 'damaged_bins'
       };
@@ -329,7 +331,7 @@ export default function ResidentChatBot() {
     if (lowerPrompt.includes('spill') || lowerPrompt.includes('contamination') || lowerPrompt.includes('mess')) {
       return {
         text: 'I\'ll help you report this spill or mess to the city right away. This is important for everyone\'s safety!\n\n**STEP 2:** Tell me about the problem:\n\n• What kind of spill is it?\n• Where is it located?\n• Is it dangerous?\n• When did you notice it?\n\nI\'ll make sure the city officials know about this quickly.',
-        suggestions: ['Yes, submit my report', 'Add my location', 'Take a photo', 'This is urgent!'],
+        suggestions: [],
         category: 'reporting',
         reportCategory: 'spill_contamination'
       };
@@ -338,7 +340,7 @@ export default function ResidentChatBot() {
     if (lowerPrompt.includes('noise') && (lowerPrompt.includes('complaint') || lowerPrompt.includes('problem') || lowerPrompt.includes('loud'))) {
       return {
         text: 'I\'ll help you report this noise problem to the city.\n\n**STEP 2:** Tell me about the noise:\n\n• What kind of noise is it?\n• When does it happen?\n• Where is it coming from?\n• How long does it last?\n\nI\'ll send this information to the city officials.',
-        suggestions: ['Yes, submit my report', 'Add my location', 'Describe the noise', 'Need help?'],
+        suggestions: [],
         category: 'reporting',
         reportCategory: 'noise_complaint'
       };
@@ -347,7 +349,7 @@ export default function ResidentChatBot() {
     if (lowerPrompt.includes('help me report') || lowerPrompt.includes('start report') || lowerPrompt.includes('submit report')) {
       return {
         text: 'I\'m here to help you report problems to the city! Let\'s do this step by step.\n\n**STEP 1:** What problem do you need to report?\n\n• Garbage truck didn\'t come\n• Broken garbage bin\n• Spill or mess\n• Noise problem\n• Something else\n\nJust tell me what\'s wrong in your own words.',
-        suggestions: ['Garbage truck didn\'t come', 'Broken garbage bin', 'Spill or mess', 'Noise problem'],
+        suggestions: [],
         category: 'reporting'
       };
     }
@@ -355,14 +357,14 @@ export default function ResidentChatBot() {
     if (lowerPrompt.includes('weather') || lowerPrompt.includes('storm') || lowerPrompt.includes('snow')) {
       return {
         text: 'During severe weather:\n• Collection may be delayed or cancelled\n• Check our app for real-time updates\n• Keep bins secure to prevent damage\n• Report weather-related issues immediately',
-        suggestions: ['Check for delays', 'Report weather issue', 'Emergency contact']
+        suggestions: []
       };
     }
 
     if (lowerPrompt.includes('large') || lowerPrompt.includes('bulky') || lowerPrompt.includes('furniture')) {
       return {
         text: 'For large items:\n• Schedule special pickup through our app\n• Drop off at collection centers\n• Fees may apply for oversized items\n• Call (555) 123-WASTE to arrange pickup',
-        suggestions: ['Schedule pickup', 'Center locations', 'Fees and pricing']
+        suggestions: []
       };
     }
 
@@ -370,7 +372,7 @@ export default function ResidentChatBot() {
     const contextHint = context.length > 0 ? ` Based on our conversation about ${context[context.length - 1]},` : '';
     return {
       text: `I understand you're asking about: "${prompt}".${contextHint} I can help with schedules, sorting, reporting, or general waste management questions. Could you be more specific?`,
-      suggestions: ['Collection schedule', 'Sorting guide', 'Report problem', 'Find centers']
+      suggestions: []
     };
   }
 
@@ -380,17 +382,20 @@ export default function ResidentChatBot() {
     setSending(true);
     setInput('');
 
+    // capture image for this message before clearing state
+    const imageForThisMessage = selectedImage;
+
     const userMessage = { 
       id: `${Date.now()}-user`, 
       role: 'user', 
-      text: prompt || (selectedImage ? 'Shared an image' : ''),
-      image: selectedImage,
+      text: prompt || (imageForThisMessage ? 'Shared an image' : ''),
+      image: imageForThisMessage,
       timestamp: new Date()
     };
     setMessages(prev => [...prev, userMessage]);
     
     // Update conversation context
-    const contextPrompt = prompt || (selectedImage ? 'image shared' : '');
+    const contextPrompt = prompt || (imageForThisMessage ? 'image shared' : '');
     setConversationContext(prev => [...prev.slice(-4), contextPrompt]); // Keep last 5 messages for context
     requestAnimationFrame(scrollToEnd);
 
@@ -402,50 +407,78 @@ export default function ResidentChatBot() {
 
     // Simulate a more realistic delay with typing animation
     setTimeout(async () => {
-      let response;
-      if (selectedImage && !prompt) {
-        // Image-only message
-        response = getLocalResponse('image shared', conversationContext);
-      } else {
-        response = getLocalResponse(prompt, conversationContext);
+  let responseText = '';
+  let responseCategory = undefined;
+  let responseSuggestions = [];
+
+      // Try server-side / remote Gemini via callGemini. If it returns null, fallback to local logic.
+      try {
+  const remote = await callGemini(prompt, imageForThisMessage, conversationContext);
+        if (remote) {
+          if (typeof remote === 'string') {
+            responseText = remote;
+          } else {
+            responseText = remote.text || remote.message || JSON.stringify(remote);
+            // If suggestions were included, capture them
+            if (remote.suggestions && Array.isArray(remote.suggestions)) {
+              responseCategory = responseCategory || remote.category;
+              // attach suggestions to assistant later
+              responseSuggestions = remote.suggestions;
+            }
+          }
+        } else {
+          const local = imageForThisMessage && !prompt
+            ? getLocalResponse('image shared', conversationContext)
+            : getLocalResponse(prompt, conversationContext);
+          responseText = local.text;
+          responseCategory = local.category;
+        }
+      } catch (e) {
+        const local = imageForThisMessage && !prompt
+          ? getLocalResponse('image shared', conversationContext)
+          : getLocalResponse(prompt, conversationContext);
+        console.warn('[Assistant] Falling back to local response due to error:', e?.message || e);
+        responseText = local.text;
+        responseCategory = local.category;
       }
-      
-      // Handle report submission
-      if (response.reportCategory) {
+
+      // After we have a response (either Gemini or local), run reporting category detection using local logic
+      const detection = getLocalResponse(prompt || (imageForThisMessage ? 'image shared' : ''), conversationContext);
+
+      // If detection indicates a report category, persist it and possibly keep images
+      if (detection.reportCategory) {
         setReportData(prev => ({
           ...prev,
-          category: response.reportCategory,
+          category: detection.reportCategory,
           description: prompt,
-          images: selectedImage ? [...prev.images, selectedImage] : prev.images
+          images: imageForThisMessage ? [...prev.images, imageForThisMessage] : prev.images
         }));
       }
 
       // Check if user wants to submit a report
-      if (prompt.toLowerCase().includes('submit') && (prompt.toLowerCase().includes('report') || reportData.category)) {
+      if (prompt && prompt.toLowerCase().includes('submit') && (prompt.toLowerCase().includes('report') || reportData.category)) {
         try {
           const reportId = await submitReport();
-          response.text = `✅ **SUCCESS!** Your report has been sent to the city officials.\n\n**Your Report Number:** ${reportId}\n**Problem Type:** ${reportData.category}\n**Status:** City officials will review it\n\n**What happens next?**\n• City officials will receive your report\n• They will look into the problem\n• You may get a call or visit from them\n• The problem should be fixed soon\n\nDon\'t worry - your report is now in the system!`;
-          response.suggestions = ['Ask about schedules', 'Report another problem', 'Need more help?'];
+          responseText = `✅ **SUCCESS!** Your report has been sent to the city officials.\n\n**Your Report Number:** ${reportId}\n**Problem Type:** ${reportData.category}\n**Status:** City officials will review it\n\n**What happens next?**\n• City officials will receive your report\n• They will look into the problem\n• You may get a call or visit from them\n• The problem should be fixed soon\n\nDon\'t worry - your report is now in the system!`;
         } catch (error) {
-          response.text = `❌ **I\'m sorry, there was a problem sending your report.**\n\n**Don\'t worry!** You can still report this problem:\n\n• Call the city hotline: (555) 123-WASTE\n• Visit the city office\n• Try reporting again later\n\n**Or tell me what happened and I\'ll try again.**`;
-          response.suggestions = ['Try again', 'Call hotline', 'Need help?'];
+          responseText = `❌ **I'm sorry, there was a problem sending your report.**\n\n**Don't worry!** You can still report this problem:\n\n• Call the city hotline: (555) 123-WASTE\n• Visit the city office\n• Try reporting again later\n\n**Or tell me what happened and I'll try again.**`;
         }
       }
       
       const assistantMessage = { 
         id: `${Date.now()}-assistant`, 
         role: 'assistant', 
-        text: response.text,
+        text: responseText,
         timestamp: new Date(),
-        suggestions: response.suggestions || [],
-        category: response.category
+        suggestions: responseSuggestions && responseSuggestions.length > 0 ? responseSuggestions : [],
+        category: responseCategory
       };
       setMessages(prev => [...prev, assistantMessage]);
       setTyping(false);
       requestAnimationFrame(scrollToEnd);
       setSending(false);
     }, 800 + Math.random() * 400); // Random delay between 800-1200ms
-  }, [input, selectedImage, sending, scrollToEnd, conversationContext]);
+  }, [input, selectedImage, sending, scrollToEnd, conversationContext, reportData.category]);
 
   const handleSuggestionPress = useCallback((suggestion) => {
     setInput(suggestion);

@@ -3,7 +3,7 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-import { CollectorAuthProvider } from '../hooks/useCollectorAuth';
+import { CollectorAuthProvider } from '../hooks/useCollectorAuthSupabase';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { ResidentAuthProvider } from '../hooks/useResidentAuth';
 
