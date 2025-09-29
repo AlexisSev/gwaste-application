@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { collection, getDocs, query, where } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { db } from '../firebase';
+import { supabase } from '../services/supabaseClient';
 
 const ResidentAuthContext = createContext();
 
@@ -41,29 +40,18 @@ export const ResidentAuthProvider = ({ children }) => {
       throw new Error('Please enter both first name and password.');
     }
 
-    // Query exact match on firstName, then verify password
-    const residentsRef = collection(db, 'residents');
-    const byFirstName = query(residentsRef, where('firstName', '==', first));
-    const snap = await getDocs(byFirstName);
+    // Case-insensitive fetch, then verify password client-side
+    const { data, error } = await supabase
+      .from('residents')
+      .select('*')
+      .ilike('first_name', first)
+      .limit(50);
+    if (error) throw error;
 
     let match = null;
-    snap.forEach((doc) => {
-      const data = doc.data();
-      if (data && data.password === pwd) {
-        match = { id: doc.id, ...data };
-      }
-    });
-
-    // Fallback to case-insensitive scan if needed
-    if (!match) {
-      const all = await getDocs(residentsRef);
-      all.forEach((doc) => {
-        const data = doc.data();
-        const firstLower = data?.firstName ? String(data.firstName).trim().toLowerCase() : '';
-        if (firstLower === first.toLowerCase() && data?.password === pwd) {
-          match = { id: doc.id, ...data };
-        }
-      });
+    if (Array.isArray(data)) {
+      const fl = first.toLowerCase();
+      match = data.find(r => String(r.first_name || '').trim().toLowerCase() === fl && String(r.password || '').trim() === pwd) || null;
     }
 
     if (!match) {

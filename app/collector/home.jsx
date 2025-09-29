@@ -1,18 +1,16 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { addDoc, collection, getDocs, query, serverTimestamp, where } from 'firebase/firestore';
 import { AlertCircle, CheckCircle, MapPin } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { db } from '../../firebase';
-import { useCollectorAuth } from '../../hooks/useCollectorAuth';
+import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
+import { supabase } from '../../services/supabaseClient';
 
 export default function LandingScreen() {
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(true);
-  const [assignedRoutes, setAssignedRoutes] = useState(0);
-  const [areasCollected, setAreasCollected] = useState(0);
+  // Removed unused states: assignedRoutes, areasCollected (not displayed)
   const [todaysSchedule, setTodaysSchedule] = useState([]);
   const [routeNames, setRouteNames] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -146,28 +144,52 @@ export default function LandingScreen() {
     return distance <= 100;
   };
 
-  // Mark area as collected
+  // Mark area as collected (append to areas_collected text[] for today's record)
   const markAreaAsCollected = async (area, routeNumber) => {
     try {
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-      
-      const collectionRef = collection(db, 'collections');
-      await addDoc(collectionRef, {
-        area: area,
-        routeNumber: routeNumber,
-        collectorId: collector.driver,
-        collectorName: collector.firstName || collector.driver,
-        collectedAt: serverTimestamp(),
-        collectedDate: today, // YYYY-MM-DD format
-        location: currentLocation,
-        status: 'completed',
-        collectionType: 'manual', // 'manual' or 'automatic'
-        timestamp: Date.now() // For easier sorting
-      });
 
+      // 1) Fetch existing row for this collector and date
+      const { data: existing, error: fetchErr } = await supabase
+        .from('collections')
+        .select('id, areas_collected')
+        .eq('collector_id', collector?.id)
+        .eq('collected_date', today)
+        .maybeSingle();
+      if (fetchErr && fetchErr.code !== 'PGRST116') throw fetchErr;
+
+      if (!existing) {
+        // 2) Insert a new row with this area
+        const { error: insertErr } = await supabase
+          .from('collections')
+          .insert({
+            collector_id: collector?.id,
+            collector_name: collector?.firstName || collector?.driver,
+            collected_date: today,
+            areas_collected: [area],
+            route_number: routeNumber,
+            collected_at: new Date().toISOString(),
+            location: currentLocation,
+            status: 'completed',
+            collectionType: 'manual',
+            timestamp: Date.now()
+          });
+        if (insertErr) throw insertErr;
+      } else {
+        // 3) Update existing row, append if not present
+        const current = Array.isArray(existing.areas_collected) ? existing.areas_collected : [];
+        if (!current.includes(area)) {
+          const updated = [...current, area];
+          const { error: updateErr } = await supabase
+            .from('collections')
+            .update({ areas_collected: updated })
+            .eq('id', existing.id);
+          if (updateErr) throw updateErr;
+        }
+      }
+
+      // Local UI updates
       setCollectedAreas(prev => new Set([...prev, area]));
-      
-      // Update local schedule to show as collected
       setTodaysSchedule(prev => 
         prev.map(item => 
           item.location === area 
@@ -176,9 +198,8 @@ export default function LandingScreen() {
         )
       );
 
-      // Notify residents in the area
       await notifyResidents(area, 'collected');
-      
+
     } catch (error) {
       console.error('Error marking area as collected:', error);
     }
@@ -187,16 +208,18 @@ export default function LandingScreen() {
   // Notify residents when truck enters/leaves geofence
   const notifyResidents = async (area, status) => {
     try {
-      const notificationsRef = collection(db, 'notifications');
-      await addDoc(notificationsRef, {
-        area: area,
-        status: status, // 'approaching' or 'collected'
-        collectorId: collector.driver,
-        timestamp: serverTimestamp(),
-        message: status === 'approaching' 
-          ? `Waste collection truck is approaching ${area}` 
-          : `Waste collection completed in ${area}`
-      });
+      const { error } = await supabase
+        .from('notifications')
+        .insert({
+          area: area,
+          status: status,
+          collector_id: collector?.id,
+          timestamp: new Date().toISOString(),
+          message: status === 'approaching' 
+            ? `Waste collection truck is approaching ${area}` 
+            : `Waste collection completed in ${area}`
+        });
+      if (error) throw error;
     } catch (error) {
       console.error('Error sending notification:', error);
     }
@@ -254,63 +277,31 @@ export default function LandingScreen() {
   // Load previously collected areas for today
   const loadCollectedAreas = async () => {
     try {
-      if (!collector?.driver) {
+      if (!collector?.id) {
         setCollectedAreasLoaded(true);
         return;
       }
       
       const today = new Date().toISOString().split('T')[0];
       
-      // First try to get collections with collectedDate field
-      let collectionsQuery = query(
-        collection(db, 'collections'),
-        where('collectorId', '==', collector.driver),
-        where('collectedDate', '==', today)
-      );
-      
-      let collectionsSnapshot = await getDocs(collectionsQuery);
-      
-      // If no results with collectedDate, try without it (for older documents)
-      if (collectionsSnapshot.empty) {
-        const fallbackQuery = query(
-          collection(db, 'collections'),
-          where('collectorId', '==', collector.driver)
-        );
-        collectionsSnapshot = await getDocs(fallbackQuery);
-      }
-      
-      if (collectionsSnapshot.empty) {
+      const { data, error } = await supabase
+        .from('collections')
+        .select('areas_collected')
+        .eq('collector_id', collector.id)
+        .eq('collected_date', today);
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
         setCollectedAreas(new Set());
         setCollectedAreasLoaded(true);
         return;
       }
       
+      // Aggregate all areas_collected arrays across rows (if multiple)
       const collectedSet = new Set();
-      const collectedData = [];
-      
-      collectionsSnapshot.forEach(doc => {
-        const data = doc.data();
-        
-        // Check if this collection is from today
-        let isToday = false;
-        if (data.collectedDate) {
-          // New format with collectedDate field
-          isToday = data.collectedDate === today;
-        } else if (data.collectedAt) {
-          // Old format - check if collectedAt is from today
-          const collectedDate = new Date(data.collectedAt.seconds * 1000);
-          const collectedDateString = collectedDate.toISOString().split('T')[0];
-          isToday = collectedDateString === today;
-        }
-        
-        if (data.area && isToday) {
-          collectedSet.add(data.area);
-          collectedData.push({
-            area: data.area,
-            collectedAt: data.collectedAt,
-            timestamp: data.timestamp
-          });
-        }
+      data.forEach(row => {
+        const arr = Array.isArray(row.areas_collected) ? row.areas_collected : [];
+        arr.forEach(a => { if (a) collectedSet.add(a); });
       });
       
       // Set the collected areas state
@@ -322,17 +313,10 @@ export default function LandingScreen() {
           const isCollected = collectedSet.has(item.location);
           
           if (isCollected) {
-            const collectedInfo = collectedData.find(c => c.area === item.location);
-            const collectedAt = collectedInfo?.collectedAt ? 
-              (collectedInfo.collectedAt.seconds ? 
-                new Date(collectedInfo.collectedAt.seconds * 1000).toISOString() : 
-                new Date().toISOString()) : 
-              new Date().toISOString();
-              
             return {
               ...item,
               collected: true,
-              collectedAt: collectedAt
+              collectedAt: new Date().toISOString()
             };
           }
           return item;
@@ -352,20 +336,21 @@ export default function LandingScreen() {
       if (collector) {
         try {
           setDisplayName(collector.driver || collector.firstName || '');
-          const routesQuery = query(collection(db, 'routes'), where('driver', '==', collector.driver));
-          const routesSnapshot = await getDocs(routesQuery);
-          setAssignedRoutes(routesSnapshot.size);
-          let collectedCount = 0;
+          const { data: routesData, error } = await supabase
+            .from('routes')
+            .select('*')
+            .eq('driver', collector.driver);
+          if (error) throw error;
+          // assignedRoutes and areasCollected removed as they were unused in UI
           let scheduleList = [];
           let routeNameList = [];
-          routesSnapshot.forEach(docSnap => {
-            const data = docSnap.data();
+          (routesData || []).forEach(data => {
             if (data.route) {
               routeNameList.push(`Route ${data.route}`);
             }
             if (data.time && data.areas && data.areas.length > 0) {
               // Generate time intervals for each area
-              const timeIntervals = generateTimeIntervals(data.time, data.endTime, data.areas);
+              const timeIntervals = generateTimeIntervals(data.time, data.end_time, data.areas);
               
               // Create schedule entries for each time interval
               timeIntervals.forEach(interval => {
@@ -382,26 +367,19 @@ export default function LandingScreen() {
                 scheduleList.push(scheduleEntry);
               });
             }
-            if (data.collectedAreas) {
-              collectedCount += data.collectedAreas.filter(a => a.driver === collector.driver).length;
-            }
+            // collected count omitted without a direct mapping table
           });
           scheduleList.sort((a, b) => new Date(`2000-01-01 ${a.time}`) - new Date(`2000-01-01 ${b.time}`));
-          setAreasCollected(collectedCount);
           setTodaysSchedule(scheduleList);
           setRouteNames(routeNameList);
         } catch (e) {
           console.error('Error fetching collector data:', e);
           setDisplayName(collector.driver || collector.firstName || '');
-          setAssignedRoutes(0);
-          setAreasCollected(0);
           setTodaysSchedule([]);
           setRouteNames([]);
         }
       } else {
         setDisplayName('');
-        setAssignedRoutes(0);
-        setAreasCollected(0);
         setTodaysSchedule([]);
         setRouteNames([]);
       }

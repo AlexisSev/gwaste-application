@@ -1,11 +1,10 @@
 import { Feather } from '@expo/vector-icons';
-import { collection, getDocs, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 // eslint-disable-next-line import/namespace
 import { ThemedView } from '../../components/ThemedView';
-import { db } from '../../firebase';
-import { useCollectorAuth } from '../../hooks/useCollectorAuth';
+import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
+import { supabase } from '../../services/supabaseClient';
 
 export default function ScheduleScreen() {
   const [selectedDay, setSelectedDay] = useState(new Date().getDate());
@@ -64,8 +63,7 @@ export default function ScheduleScreen() {
       const ampm = hour >= 12 ? 'PM' : 'AM';
       const displayHour = hour % 12 || 12;
       return `${displayHour}:${minutes} ${ampm}`;
-    // eslint-disable-next-line no-unused-vars
-    } catch (error) {
+    } catch (_e) {
       return timeString;
     }
   };
@@ -77,12 +75,12 @@ export default function ScheduleScreen() {
     if (!collector) return;
     try {
       setLoading(true);
-      const routesRef = collection(db, 'routes');
-      const q = query(routesRef, where('driver', '==', collector.driver));
-      const querySnapshot = await getDocs(q);
-      const routesData = [];
-      querySnapshot.forEach((doc) => { routesData.push({ id: doc.id, ...doc.data() }); });
-      setRoutes(routesData);
+      const { data, error } = await supabase
+        .from('routes')
+        .select('*')
+        .eq('driver', collector.driver);
+      if (error) throw error;
+      setRoutes(data || []);
     } catch (error) {
       console.error('Error fetching routes:', error);
     } finally {

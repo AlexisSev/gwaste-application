@@ -3,15 +3,15 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
     Alert,
+    StyleSheet,
     SafeAreaView,
     ScrollView,
-    StyleSheet,
     Switch,
     Text,
     TouchableOpacity,
     View
 } from 'react-native';
-import { useCollectorAuth } from '../../hooks/useCollectorAuth';
+import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
 
 export default function CollectorSettingsScreen() {
   const router = useRouter();
@@ -181,7 +181,7 @@ export default function CollectorSettingsScreen() {
           </View>
         </View>
 
-        {/* Appearance Section */}
+        {/* Appearance Section
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Appearance</Text>
           
@@ -200,7 +200,7 @@ export default function CollectorSettingsScreen() {
               thumbColor={darkModeEnabled ? '#fff' : '#f4f3f4'}
             />
           </View>
-        </View>
+        </View> */}
 
         {/* Work Settings Section */}
         <View style={styles.section}>

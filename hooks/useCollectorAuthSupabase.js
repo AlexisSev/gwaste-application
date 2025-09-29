@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { collection, getDocs } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { db } from '../firebase';
+import { supabase } from '../services/supabaseClient';
 
 const CollectorAuthContext = createContext();
 
@@ -18,7 +17,6 @@ export const CollectorAuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored collector data on app start
     loadStoredCollector();
   }, []);
 
@@ -37,38 +35,36 @@ export const CollectorAuthProvider = ({ children }) => {
 
   const login = async (driver, password) => {
     try {
-      const driverLower = driver.trim().toLowerCase();
-      const collectorsRef = collection(db, 'collectors');
-      const querySnapshot = await getDocs(collectorsRef);
+      const d = String(driver || '').trim();
+      const p = String(password || '').trim();
+      if (!d || !p) throw new Error('Please enter both first name and password.');
 
-      let collectorFound = false;
-      let collectorData = null;
+      const { data, error } = await supabase
+        .from('collectors')
+        .select('*')
+        .or(`driver.ilike.${d},firstName.ilike.${d}`)
+        .limit(50);
+      if (error) throw error;
 
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-
-        const fullNameLower = data.driver ? data.driver.trim().toLowerCase() : '';
-        const firstNameLower = data.firstName
-          ? data.firstName.trim().toLowerCase()
-          : (data.driver ? data.driver.trim().split(/\s+/)[0].toLowerCase() : '');
-
-        if (
-          data.password &&
-          (fullNameLower === driverLower || firstNameLower === driverLower) &&
-          data.password === password
-        ) {
-          collectorFound = true;
-          collectorData = { id: doc.id, ...data };
-        }
-      });
-
-      if (!collectorFound) {
-        throw new Error('Invalid first name or password.');
+      let match = null;
+      if (Array.isArray(data)) {
+        const dl = d.toLowerCase();
+        match = data.find(c => (
+          String(c.driver || '').trim().toLowerCase() === dl ||
+          String(c.firstName || '').trim().toLowerCase() === dl
+        ) && String(c.password || '').trim() === p) || null;
       }
 
-      await AsyncStorage.setItem('collectors', JSON.stringify(collectorData));
-      setCollector(collectorData);
-      return collectorData;
+      if (!match) throw new Error('Invalid first name or password.');
+
+      // Ensure collector_id is present for FK usage in other parts of the app
+      const enriched = {
+        ...match,
+        collector_id: match.collector_id || match.id || null,
+      };
+      await AsyncStorage.setItem('collectors', JSON.stringify(enriched));
+      setCollector(enriched);
+      return enriched;
     } catch (error) {
       throw error;
     }
@@ -83,21 +79,13 @@ export const CollectorAuthProvider = ({ children }) => {
     }
   };
 
-  const isAuthenticated = () => {
-    return collector !== null;
-  };
+  const isAuthenticated = () => collector !== null;
 
-  const value = {
-    collector,
-    loading,
-    login,
-    logout,
-    isAuthenticated,
-  };
+  const value = { collector, loading, login, logout, isAuthenticated };
 
   return (
     <CollectorAuthContext.Provider value={value}>
       {children}
     </CollectorAuthContext.Provider>
   );
-}; 
+};

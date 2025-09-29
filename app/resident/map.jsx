@@ -2,11 +2,9 @@
 /* eslint-disable no-unused-vars */
 import * as Location from 'expo-location';
 import { useLocalSearchParams } from 'expo-router';
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { auth, db } from '../../firebase';
 import { supabase } from '../../services/supabaseClient';
 
 export default function MapScreen() {
@@ -29,6 +27,7 @@ export default function MapScreen() {
   });
   const [truckSchedule, setTruckSchedule] = useState(null);
   const [selectedTruckId, setSelectedTruckId] = useState(null);
+  const [driverNames, setDriverNames] = useState({});
 
   // If schedule screen passed a pickupType, show it immediately while we compute
   useEffect(() => {
@@ -90,7 +89,7 @@ export default function MapScreen() {
             // Create detailed popup
             const popupContent = \`
               <div style="text-align: center; min-width: 150px;">
-                <h4 style="margin: 0 0 8px 0; color: #4CAF50;">🚛 Driver \${c.collector_id}</h4>
+                <h4 style="margin: 0 0 8px 0; color: #4CAF50;">🚛 Driver \${c.displayName || c.collector_id}</h4>
                 <p style="margin: 4px 0; font-size: 12px; color: #666;">
                   Last seen: \${new Date(c.updated_at).toLocaleTimeString()}
                 </p>
@@ -189,21 +188,12 @@ export default function MapScreen() {
   const fetchTruckSchedule = async (collectorId) => {
     try {
       setSelectedTruckId(collectorId);
-      
-      // Fetch routes for this collector
-      const routesRef = collection(db, 'routes');
-      const routesSnapshot = await getDocs(routesRef);
-      
-      const collectorRoutes = [];
-      routesSnapshot.forEach(doc => {
-        const routeData = doc.data();
-        if (routeData.driver === collectorId) {
-          collectorRoutes.push({
-            id: doc.id,
-            ...routeData
-          });
-        }
-      });
+      const { data, error } = await supabase
+        .from('routes')
+        .select('*')
+        .eq('driver', collectorId);
+      if (error) throw error;
+      const collectorRoutes = (data || []).map(r => ({ id: r.id, ...r }));
 
       // Sort routes by time
       collectorRoutes.sort((a, b) => {
@@ -222,181 +212,114 @@ export default function MapScreen() {
   // Function to fetch pickup information from routes
   const fetchPickupInfo = async () => {
     try {
-      // if pickup type passed from previous screen, prefer showing it while computing
-      // Note: we avoid importing useLocalSearchParams to keep this screen isolated
-      // We will read initial pickupType from global if provided via router params through RN
-      const user = auth.currentUser;
       const currentUserLoc = location || defaultLocation;
-      // Fallback when no Firebase user (resident logged in via params)
-      if (!user) {
-        const activeCollectors = getActiveCollectors();
-        let nextCollector = null;
-        let driverName = null;
-        if (activeCollectors.length > 0 && currentUserLoc) {
-          // Find closest collector
-          let closest = activeCollectors[0];
-          let minDist = calculateDistance(
-            currentUserLoc.latitude,
-            currentUserLoc.longitude,
-            closest.latitude,
-            closest.longitude
-          );
-          activeCollectors.forEach(c => {
-            if (c.latitude && c.longitude) {
-              const d = calculateDistance(
-                currentUserLoc.latitude,
-                currentUserLoc.longitude,
-                c.latitude,
-                c.longitude
-              );
-              if (d < minDist) { minDist = d; closest = c; }
+      const activeCollectors = getActiveCollectors();
+      let nextCollector = null;
+      let driverName = null;
+      if (activeCollectors.length > 0 && currentUserLoc) {
+        // Find closest collector
+        let closest = activeCollectors[0];
+        let minDist = calculateDistance(
+          currentUserLoc.latitude,
+          currentUserLoc.longitude,
+          closest.latitude,
+          closest.longitude
+        );
+        activeCollectors.forEach(c => {
+          if (c.latitude && c.longitude) {
+            const d = calculateDistance(
+              currentUserLoc.latitude,
+              currentUserLoc.longitude,
+              c.latitude,
+              c.longitude
+            );
+            if (d < minDist) { minDist = d; closest = c; }
+          }
+        });
+        nextCollector = closest;
+      }
+      // Infer pickup type from the nearest collector's assigned route
+      // Prefer route_type sent by the collector app; fallback to resolving via routes
+      let pickupType = (nextCollector && nextCollector.route_type) ? String(nextCollector.route_type) : 'General Waste';
+      if (nextCollector) {
+        try {
+          // Special-case for dev test truck to validate UI quickly
+          if (nextCollector.collector_id === 'TEST_TRUCK') {
+            pickupType = 'Biodegradable (Demo)';
+          }
+          // If route_type not present on the location row, resolve via routes as before
+          if (!pickupType || pickupType === 'General Waste' || pickupType === 'N/A') {
+          // 1) Resolve the driver's display identifier (used in routes.driver)
+          let resolvedDriver = null;
+          // Try by collector_id (string key)
+          let collectorsRow = null;
+          const { data: byCollectorId } = await supabase
+            .from('collectors')
+            .select('driver, firstName, id, collector_id')
+            .eq('collector_id', nextCollector.collector_id)
+            .maybeSingle();
+          if (byCollectorId) collectorsRow = byCollectorId;
+          // If not found, try by id (uuid)
+          if (!collectorsRow) {
+            const { data: byId } = await supabase
+              .from('collectors')
+              .select('driver, firstName, id, collector_id')
+              .eq('id', nextCollector.collector_id)
+              .maybeSingle();
+            if (byId) collectorsRow = byId;
+          }
+          if (collectorsRow) {
+            resolvedDriver = collectorsRow.driver || collectorsRow.firstName || null;
+          }
+
+          // 2) Query routes by driver name (exact and ilike fallback)
+          if (resolvedDriver) {
+            let driverRoutes = [];
+            let err = null;
+            try {
+              const res1 = await supabase
+                .from('routes')
+                .select('*')
+                .eq('driver', resolvedDriver);
+              driverRoutes = res1.data || [];
+            } catch (_e1) { /* ignore */ }
+            if (driverRoutes.length === 0) {
+              try {
+                const res2 = await supabase
+                  .from('routes')
+                  .select('*')
+                  .ilike('driver', `%${resolvedDriver}%`);
+                driverRoutes = res2.data || [];
+              } catch (_e2) { /* ignore */ }
             }
-          });
-          nextCollector = closest;
-        }
-        // Infer pickup type from the nearest collector's assigned route
-        // Use 'N/A' until we confirm a matching route
-        let pickupType = 'N/A';
-        if (nextCollector) {
-          try {
-            const routesRef = collection(db, 'routes');
-            const routesSnapshot = await getDocs(routesRef);
-            routesSnapshot.forEach(doc => {
-              const routeData = doc.data();
-              if (routeData.driver === nextCollector.collector_id && routeData.type) {
+            if (driverRoutes.length > 0) {
+              const route = driverRoutes[0];
+              if (route?.type) pickupType = route.type;
+              driverName = resolvedDriver;
+            }
+          } else {
+            // 3) Fallback: try matching routes.driver directly to collector_id string
+            const { data: routesData } = await supabase.from('routes').select('*');
+            (routesData || []).forEach(routeData => {
+              if ((routeData.driver === nextCollector.collector_id || (driverName && routeData.driver === driverName)) && routeData.type) {
                 pickupType = routeData.type;
-                // Prefer human-friendly driver name from route
                 driverName = routeData.driver || driverName;
               }
             });
-          } catch (_e) {
-            // ignore and keep default
           }
-        }
-        const estimatedArrival = nextCollector ? calculateEstimatedArrival(nextCollector, currentUserLoc) : 'N/A';
-        const status = nextCollector ? getPickupStatus(nextCollector, currentUserLoc) : 'Scheduled';
-        setPickupInfo({
-          type: pickupType,
-          estimatedArrival,
-          status,
-          nextCollector,
-          driverName: driverName || (nextCollector ? nextCollector.collector_id : null)
-        });
-        return;
+          }
+        } catch (_e) { /* ignore */ }
       }
-
-      // Get resident data to find their area/purok
-      const residentRef = doc(db, 'residents', user.uid);
-      const residentSnap = await getDoc(residentRef);
-      
-      if (!residentSnap.exists()) {
-        setPickupInfo({
-          type: 'No pickup scheduled',
-          estimatedArrival: 'N/A',
-          status: 'No data',
-          nextCollector: null
-        });
-        return;
-      }
-
-      const residentData = residentSnap.data();
-      const userPurok = residentData.purok || '';
-      const userAddress = residentData.address || '';
-
-      // Fetch routes collection to find pickup type for this area
-      const routesRef = collection(db, 'routes');
-      const routesSnapshot = await getDocs(routesRef);
-      
-      let pickupType = 'General Waste';
-      let nextCollector = null;
-      let assignedDriver = null;
-      // Normalize and match resident area against routes.areas similar to resident schedule
-      const normalize = (s) => (s || '')
-        .toString()
-        .toLowerCase()
-        .replace(/\b(address|barangay|brgy\.?|purok|street|st\.?|road|rd\.?|avenue|ave\.?)\b/g, '')
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      const addrNorm = normalize(userAddress);
-      const purokNorm = normalize(userPurok);
-      const tokens = new Set([addrNorm, purokNorm].filter(Boolean));
-      const areaMatchesResident = (area) => {
-        const a = normalize(area);
-        if (!a) return false;
-        for (const t of tokens) {
-          if (!t) continue;
-          if (a === t) return true;
-          if (t.length >= 3 && (t.includes(a) || a.includes(t))) return true;
-        }
-        return false;
-      };
-      
-      // Find route that matches user's address or area (normalized)
-      routesSnapshot.forEach(doc => {
-        const routeData = doc.data();
-        const matchesAreas = Array.isArray(routeData.areas) && routeData.areas.some(areaMatchesResident);
-        const routeAddressNorm = normalize(routeData.address);
-        const matchesAddress = routeAddressNorm && ([...tokens].some(t => t && (t === routeAddressNorm || t.includes(routeAddressNorm) || routeAddressNorm.includes(t))));
-        if (matchesAreas || matchesAddress) {
-          pickupType = routeData.type || 'General Waste';
-          if (routeData.driver) assignedDriver = routeData.driver;
-        }
-      });
-
-      // Choose the collector assigned to the matched route (not nearest)
-      const activeCollectors = getActiveCollectors();
-      let paramDriver = params?.driver ? String(params.driver) : null;
-      if (activeCollectors.length > 0 && (assignedDriver || paramDriver)) {
-        const targetDriver = paramDriver || assignedDriver;
-        const assignedCollector = activeCollectors.find(c => c.collector_id === targetDriver);
-        nextCollector = assignedCollector || null;
-      } else {
-        // No active collectors right now
-        nextCollector = null;
-      }
-
-      // If no match by address/areas, infer from nearest collector's assigned route
-      if ((!pickupType || pickupType === 'General Waste') && nextCollector) {
-        try {
-          routesSnapshot.forEach(doc => {
-            const routeData = doc.data();
-            if (routeData.driver === nextCollector.collector_id && routeData.type) {
-              pickupType = routeData.type;
-            }
-          });
-        } catch (_e) {
-          // keep default
-        }
-      }
-
-      // Calculate estimated arrival and status
-      const estimatedArrival = nextCollector ? calculateEstimatedArrival(nextCollector, userLocation) : 'N/A';
-      const status = nextCollector ? getPickupStatus(nextCollector, userLocation) : 'Scheduled';
-
-      // Try to map collector_id to route.driver (human-friendly) if available.
-      // Accept either exact match or case-insensitive trimmed match.
-      let driverName = nextCollector ? nextCollector.collector_id : null;
-      try {
-        if (nextCollector) {
-          const cid = String(nextCollector.collector_id || '').trim().toLowerCase();
-          routesSnapshot.forEach(doc => {
-            const routeData = doc.data();
-            const drv = String(routeData.driver || '').trim();
-            if (drv.toLowerCase() === cid) {
-              driverName = drv; // Prefer nice-cased Firestore value
-            }
-          });
-        }
-      } catch (_e) { /* ignore */ }
-
+      const estimatedArrival = nextCollector ? calculateEstimatedArrival(nextCollector, currentUserLoc) : 'N/A';
+      const status = nextCollector ? getPickupStatus(nextCollector, currentUserLoc) : 'Scheduled';
       setPickupInfo({
         type: pickupType,
         estimatedArrival,
         status,
         nextCollector,
-        driverName
+        driverName: driverName || (nextCollector ? nextCollector.collector_id : null)
       });
+      return;
 
     } catch (error) {
       console.error('Error fetching pickup info:', error);
@@ -413,13 +336,13 @@ export default function MapScreen() {
   useEffect(() => {
     const fetchCollectors = async () => {
       try {
-        const { data, error } = await supabase.from('locations').select('*');
+        const { data, error } = await supabase.from('trucklocation').select('*');
         if (error) throw error;
 
-        // ✅ Keep only active drivers (last 30s)
+        // ✅ Keep only active drivers (last 60s)
         const activeDrivers = data.filter((d) => {
           const updatedAt = new Date(d.updated_at).getTime();
-          return Date.now() - updatedAt < 30000;
+          return Date.now() - updatedAt < 60000;
         });
 
         setCollectors(activeDrivers);
@@ -437,7 +360,7 @@ export default function MapScreen() {
       .channel('realtime:locations')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'locations' },
+        { event: '*', schema: 'public', table: 'trucklocation' },
         (payload) => {
           const newDriver = payload.new;
           setCollectors((prev) => {
@@ -445,7 +368,7 @@ export default function MapScreen() {
 
             // ✅ Check if still "active" before adding
             const updatedAt = new Date(newDriver.updated_at).getTime();
-            if (Date.now() - updatedAt < 30000) {
+            if (Date.now() - updatedAt < 60000) { // 60 seconds
               return [...others, newDriver];
             } else {
               return others;
@@ -463,7 +386,7 @@ export default function MapScreen() {
   // 🔹 Update collector markers when collectors data changes
   useEffect(() => {
     if (mapInitialized) {
-      updateCollectorMarkers(getActiveCollectors());
+      updateCollectorMarkers(getEnrichedActiveCollectors());
     }
   }, [collectors, mapInitialized]);
 
@@ -471,35 +394,10 @@ export default function MapScreen() {
   useEffect(() => {
     const fetchAndRoute = async () => {
       try {
-        const user = auth.currentUser;
-        if (!user) return;
-
-        const residentRef = doc(db, 'residents', user.uid);
-        const residentSnap = await getDoc(residentRef);
-        const address = residentSnap.exists() ? residentSnap.data()?.address || '' : '';
-        if (!address) return;
-
-        const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          address
-        )}&limit=1`;
-        const geocodeRes = await fetch(geocodeUrl, { headers: { Accept: 'application/json' } });
-        const geocodeJson = await geocodeRes.json();
-        if (!Array.isArray(geocodeJson) || geocodeJson.length === 0) return;
-
-        const destLat = parseFloat(geocodeJson[0].lat);
-        const destLng = parseFloat(geocodeJson[0].lon);
-        const dest = { latitude: destLat, longitude: destLng };
-        setDestination(dest);
-
-        const from = location || defaultLocation;
-        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};${destLng},${destLat}?overview=full&geometries=geojson`;
-        const osrmRes = await fetch(osrmUrl);
-        const osrmJson = await osrmRes.json();
-        const coords = osrmJson?.routes?.[0]?.geometry?.coordinates || [];
-        const mapped = coords.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
-        setRouteCoords(mapped);
+        // Without Firebase resident profile, we skip geocoding
+        return;
       } catch (e) {
-        // fail silently
+        // ignore
       }
     };
 
@@ -613,9 +511,42 @@ export default function MapScreen() {
     return collectors.filter((c) => {
       if (!c.updated_at) return false;
       const diff = now - new Date(c.updated_at).getTime();
-      return diff < 2 * 60 * 1000; // 2 minutes
+      return diff < 60 * 1000; // 60 seconds
     });
   };
+
+  // Build enriched list with friendly display names
+  const getEnrichedActiveCollectors = () => {
+    const active = getActiveCollectors();
+    return active.map((c) => ({
+      ...c,
+      displayName: driverNames[c.collector_id] || c.collector_id,
+    }));
+  };
+
+  // Fetch friendly driver names for currently active collectors
+  useEffect(() => {
+    const fetchDriverNames = async () => {
+      try {
+        const active = getActiveCollectors();
+        const ids = Array.from(new Set(active.map((c) => c.collector_id).filter(Boolean)));
+        if (ids.length === 0) return;
+        const { data, error } = await supabase
+          .from('collectors')
+          .select('collector_id, driver, firstName')
+          .in('collector_id', ids);
+        if (error) throw error;
+        const map = {};
+        (data || []).forEach((row) => {
+          map[row.collector_id] = row.driver || row.firstName || row.collector_id;
+        });
+        setDriverNames((prev) => ({ ...prev, ...map }));
+      } catch (e) {
+        // silently ignore
+      }
+    };
+    fetchDriverNames();
+  }, [collectors]);
 
   // Function to get status text style based on status
   const getStatusStyle = (status) => {
@@ -718,7 +649,7 @@ export default function MapScreen() {
                   if (routeCoords.length > 0) {
                     updateRoute(routeCoords);
                   }
-                  updateCollectorMarkers(getActiveCollectors());
+                  updateCollectorMarkers(getEnrichedActiveCollectors());
                 } else if (data.type === 'truckClicked') {
                   fetchTruckSchedule(data.collectorId);
                 }
@@ -825,6 +756,17 @@ const styles = StyleSheet.create({
   mapContainer: {
     flex: 1,
   },
+  devButton: {
+    position: 'absolute',
+    right: 16,
+    bottom: 92,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#1976D2',
+    borderRadius: 8,
+    elevation: 4,
+  },
+  devButtonText: { color: '#fff', fontWeight: '700' },
   webview: { ...StyleSheet.absoluteFillObject },
   placeholder: { flex: 1, backgroundColor: '#f2f2f2' },
   floatingCard: {

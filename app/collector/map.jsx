@@ -2,13 +2,18 @@
 /* eslint-disable no-unused-vars */
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { collection, getDocs, query, where } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { db } from '../../firebase';
-import { useCollectorAuth } from '../../hooks/useCollectorAuth';
+import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
 import { supabase } from '../../services/supabaseClient';
+
+// Lightweight UUID v4 generator for location_id when inserting rows
+const genUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  const r = Math.random() * 16 | 0;
+  const v = c === 'x' ? r : (r & 0x3 | 0x8);
+  return v.toString(16);
+});
 
 export default function CollectorMapScreen() {
   const [location, setLocation] = useState(null);
@@ -20,6 +25,7 @@ export default function CollectorMapScreen() {
   const [currentArea, setCurrentArea] = useState(null);
   const [nextArea, setNextArea] = useState(null);
   const [collectedAreas, setCollectedAreas] = useState(new Set());
+  const [routeType, setRouteType] = useState(null);
   const webviewRef = useRef(null);
   const MAP_HEIGHT = Math.round(Dimensions.get('window').height * 0.78);
   const { collector, loading: authLoading } = useCollectorAuth();
@@ -96,17 +102,16 @@ export default function CollectorMapScreen() {
     if (!collector?.driver) return;
 
     try {
-      const routesQuery = query(collection(db, 'routes'), where('driver', '==', collector.driver));
-      const routesSnapshot = await getDocs(routesQuery);
-      
+      const { data: routesData, error } = await supabase
+        .from('routes')
+        .select('*')
+        .eq('driver', collector.driver);
+      if (error) throw error;
+
       let scheduleList = [];
-      routesSnapshot.forEach(docSnap => {
-        const data = docSnap.data();
+      (routesData || []).forEach(data => {
         if (data.time && data.areas && data.areas.length > 0) {
-          // Generate time intervals for each area
           const timeIntervals = generateTimeIntervals(data.time, data.endTime, data.areas);
-          
-          // Create schedule entries for each time interval
           timeIntervals.forEach(interval => {
             const scheduleEntry = {
               time: interval.startTime,
@@ -125,8 +130,6 @@ export default function CollectorMapScreen() {
       
       scheduleList.sort((a, b) => new Date(`2000-01-01 ${a.time}`) - new Date(`2000-01-01 ${b.time}`));
       setTodaysSchedule(scheduleList);
-      
-      // Determine current and next areas based on current time
       updateCurrentAndNextAreas(scheduleList);
       
     } catch (error) {
@@ -202,6 +205,26 @@ export default function CollectorMapScreen() {
     }
   }, [collector, authLoading]);
 
+  // Fetch and cache the driver's route type once
+  useEffect(() => {
+    const fetchRouteTypeOnce = async () => {
+      try {
+        if (!collector?.driver) return;
+        const { data, error } = await supabase
+          .from('routes')
+          .select('type')
+          .eq('driver', collector.driver)
+          .limit(1);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          setRouteType(data[0]?.type || null);
+        }
+      } catch (_e) {
+        // ignore
+      }
+    };
+    fetchRouteTypeOnce();
+  }, [collector?.driver]);
+
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!authLoading && !collector) {
@@ -271,9 +294,11 @@ export default function CollectorMapScreen() {
       } else {
         setHasLocationPermission(false);
         setIsLoadingLocation(false);
+        console.warn('Location permission denied by user. GPS tracking disabled.');
         showLocationPermissionAlert();
       }
     } catch (error) {
+      console.error('Error requesting location permission:', error);
       setIsLoadingLocation(false);
     }
   };
@@ -304,19 +329,42 @@ export default function CollectorMapScreen() {
 
           if (!collector) {
             // addLog("⚠️ Driver data not loaded yet, skipping GPS update.");
+            console.warn('Collector not loaded yet; skipping trucklocation upsert.');
+            return;
+          }
+          const collectorIdValue = collector?.collector_id || (collector?.id ? String(collector.id) : null);
+          if (!collectorIdValue) {
+            console.warn('Collector is missing collector_id/id; cannot upsert trucklocation. Collector:', collector);
             return;
           }
 
           try {
-            await supabase.from('locations').upsert({
-              collector_id: collector.id,
+            // We intentionally omit location_id so the DB default can generate it only on first insert.
+            // With a UNIQUE index on collector_id, this upsert will update the single existing row.
+            const basePayload = {
+              collector_id: collectorIdValue, // must exist in collectors table
               latitude: coords.latitude,
               longitude: coords.longitude,
               updated_at: new Date().toISOString(),
-            });
-            // addLog(`📡 Sent GPS for ${collector.driver || collector.firstName || "Driver"}: ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`);
+            };
+            let payload = { ...basePayload, route_type: routeType || null };
+            let { error: upsertError } = await supabase
+              .from('trucklocation')
+              .upsert(payload, { onConflict: 'collector_id' });
+            // If schema doesn't have route_type yet, retry without it
+            if (upsertError && String(upsertError.message || '').toLowerCase().includes('column') && String(upsertError.message || '').toLowerCase().includes('route_type')) {
+              payload = { ...basePayload };
+              const retry = await supabase
+                .from('trucklocation')
+                .upsert(payload, { onConflict: 'collector_id' });
+              if (retry.error) {
+                console.error('Trucklocation upsert (retry without route_type) failed:', retry.error);
+              }
+            } else if (upsertError) {
+              console.error('Supabase upsert to trucklocation failed:', upsertError);
+            }
           } catch (err) {
-            // addLog(`❌ Error sending GPS: ${err.message}`);
+            console.error('Unexpected error during trucklocation upsert:', err);
           }
         }
       );
