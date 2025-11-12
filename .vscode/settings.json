@@ -1,14 +1,13 @@
 {
-  "editor.codeActionsOnSave": {
-    "source.fixAll": "explicit",
-    "source.organizeImports": "explicit",
-    "source.sortMembers": "explicit"
+  "[typescript]": {
+    "editor.defaultFormatter": "denoland.vscode-deno"
   },
   "cSpell.words": [
     "Barangays",
     "Bogo",
     "brgy",
     "Eastside",
+    "Entypo",
     "ewaste",
     "Gjnrr",
     "Gwaste",
@@ -25,5 +24,29 @@
     "trucklocation",
     "worklets",
     "XVCJ"
-  ]
+  ],
+  "deno.enablePaths": [
+    "supabase/functions"
+  ],
+  "deno.lint": true,
+  "deno.unstable": [
+    "bare-node-builtins",
+    "byonm",
+    "sloppy-imports",
+    "unsafe-proto",
+    "webgpu",
+    "broadcast-channel",
+    "worker-options",
+    "cron",
+    "kv",
+    "ffi",
+    "fs",
+    "http",
+    "net"
+  ],
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit",
+    "source.organizeImports": "explicit",
+    "source.sortMembers": "explicit"
+  }
 }

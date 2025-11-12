@@ -3,7 +3,6 @@ import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import { Tabs, usePathname } from 'expo-router';
 import React from 'react';
 import { Platform } from 'react-native';
-import ResidentChatBot from '../../components/ResidentChatBot';
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from '../../hooks/useColorScheme';
 
@@ -74,8 +73,6 @@ export default function ResidentTabLayout() {
         }}
       />
     </Tabs>
-    {/* Floating chat widget overlay */}
-    <ResidentChatBot />
     </>
   );
 }

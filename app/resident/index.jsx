@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { Feather } from '@expo/vector-icons';
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -644,6 +645,15 @@ export default function ResidentIndex() {
           </TouchableOpacity> */}
         </View>
       </ScrollView>
+      {/* Floating Android chatbot icon */}
+      <TouchableOpacity
+        style={styles.chatbotFab}
+        onPress={() => router.push('/resident/chatbot')}
+        accessibilityRole="button"
+        accessibilityLabel="Open chatbot"
+      >
+        <FontAwesome5 name="android" size={22} color="#ffffff" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -796,6 +806,23 @@ const styles = StyleSheet.create({
   dropdownText: {
     fontSize: 16,
     color: '#333'
+  },
+  chatbotFab: {
+    position: 'absolute',
+    right: 18,
+    bottom: 24,
+    backgroundColor: '#22c55e',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    zIndex: 1500
   },
   scheduleContainer: {
     backgroundColor: '#fff',
