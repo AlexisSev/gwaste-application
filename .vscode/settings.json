@@ -9,6 +9,7 @@
     "Eastside",
     "Entypo",
     "ewaste",
+    "GEOFENCE",
     "Gjnrr",
     "Gwaste",
     "latlngs",
@@ -23,7 +24,8 @@
     "supabase",
     "trucklocation",
     "worklets",
-    "XVCJ"
+    "XVCJ",
+    "yxxx"
   ],
   "deno.enablePaths": [
     "supabase/functions"

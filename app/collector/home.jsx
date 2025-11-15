@@ -2,7 +2,7 @@
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { AlertCircle, CheckCircle, MapPin } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
 import { supabase } from '../../services/supabaseClient';

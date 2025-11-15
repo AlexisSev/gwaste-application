@@ -2,7 +2,7 @@
 /* eslint-disable no-unused-vars */
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
@@ -26,10 +26,70 @@ export default function CollectorMapScreen() {
   const [nextArea, setNextArea] = useState(null);
   const [collectedAreas, setCollectedAreas] = useState(new Set());
   const [routeType, setRouteType] = useState(null);
+  const [pathCoords, setPathCoords] = useState([]); // driver's breadcrumb trail
   const webviewRef = useRef(null);
+  const geocodeCacheRef = useRef({});
+  const routeDestRef = useRef({ name: null, lat: null, lng: null });
+  const insideGeofenceRef = useRef(false);
+  const GEOFENCE_RADIUS_METERS = 1000; // fixed visual and detection radius
+  const areaCoords = {
+    // Provided static 123.96657coordinates for known areas
+    'Don Pedro': { lat: 11.07237, lng: 123.96657 },
+    'Polambato': { lat: 11.06700, lng: 123.98923 },
+    'Cayang': { lat: 11.04264, lng: 123.95960 },
+    'Taytayan': { lat: 11.04756, lng: 123.99095 },
+    'Cogon': { lat: 11.04261, lng: 124.00075 },
+  };
+
+  const findScheduleEntryByLocation = (locationName) => {
+    if (!locationName) return null;
+    const name = String(locationName).trim();
+    return (todaysSchedule || []).find((s) => String(s.location).trim() === name) || null;
+  };
+
+  const addCollectedMarker = (lat, lng, name) => {
+    if (!webviewRef.current || !mapInitialized) return;
+    const js = `
+      try {
+        window.__collectedLayer = window.__collectedLayer || L.layerGroup().addTo(window.map);
+        const m = L.circleMarker([${lat}, ${lng}], { radius: 7, color: '#2e7d32', fillColor: '#2e7d32', fillOpacity: 1 });
+        m.bindPopup(${JSON.stringify('Collected: ')} + ${JSON.stringify(name)});
+        window.__collectedLayer.addLayer(m);
+        try { m.bringToFront(); } catch (e) {}
+      } catch (e) {}
+    `;
+    webviewRef.current.injectJavaScript(js);
+  };
+
+  const planRouteToArea = async (areaName) => {
+    if (!areaName || !location) return;
+    const dest = await geocodeArea(areaName);
+    if (!dest) return;
+    routeDestRef.current = { name: areaName, lat: dest.lat, lng: dest.lng };
+    insideGeofenceRef.current = false;
+    await drawPlannedRoute(location.latitude, location.longitude, dest.lat, dest.lng, areaName);
+  };
+
+  const computeNextUncollected = (schedule, collected) => {
+    if (!Array.isArray(schedule) || schedule.length === 0) return null;
+    const now = new Date();
+    const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const currentMins = toMinutes(currentTime);
+    let candidate = null;
+    for (let i = 0; i < schedule.length; i++) {
+      const it = schedule[i];
+      if (collected.has(it.location)) continue;
+      const startM = toMinutes(it.time);
+      if (startM == null) continue;
+      if (currentMins <= startM) { candidate = it; break; }
+      if (!candidate) candidate = it; // fallback to earliest if all started
+    }
+    return candidate;
+  };
   const MAP_HEIGHT = Math.round(Dimensions.get('window').height * 0.78);
   const { collector, loading: authLoading } = useCollectorAuth();
   const router = useRouter();
+  const driverLabel = ((collector?.driver) || (collector?.collector_name) || (collector?.first_name) || 'Collector');
 
   const defaultLocation = {
     latitude: 11.033333,
@@ -51,39 +111,198 @@ export default function CollectorMapScreen() {
     }
   };
 
-  const generateTimeIntervals = (startTime, endTime, areas) => {
-    if (!startTime || !endTime || !areas || areas.length === 0) return [];
+  const toMinutes = (hhmm) => {
+    try {
+      const [h, m] = String(hhmm).split(':').map((v) => parseInt(v));
+      return h * 60 + (m || 0);
+    } catch (_) { return null; }
+  };
+
+  const toHHMM = (minsTotal) => {
+    const h = Math.floor(minsTotal / 60) % 24;
+    const m = minsTotal % 60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  };
+
+  // Haversine distance in meters
+  const distanceMeters = (lat1, lon1, lat2, lon2) => {
+    const toRad = (v) => (v * Math.PI) / 180;
+    const R = 6371000; // meters
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Normalize areas coming from DB (can be JSON string, comma-separated, or array)
+  const normalizeAreas = (areasVal) => {
+    if (!areasVal) return [];
+    if (Array.isArray(areasVal)) return areasVal.filter(Boolean);
+    if (typeof areasVal === 'string') {
+      const s = areasVal.trim();
+      // Try JSON parse first
+      if ((s.startsWith('[') && s.endsWith(']')) || (s.startsWith('{') && s.endsWith('}'))) {
+        try {
+          const parsed = JSON.parse(s);
+          if (Array.isArray(parsed)) return parsed.filter(Boolean);
+        } catch (_) {}
+      }
+      // Fallback: comma-separated list
+      return s.split(',').map(v => v.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
+  // Geocode an area name to lat/lng via Nominatim (cached) with robust local lookup
+  const geocodeArea = async (query) => {
+    if (!query) return null;
+    const raw = String(query).trim();
+    const key = raw.toLowerCase();
+    // 1) Check hardcoded area coordinates first (case-insensitive and trimmed)
+    if (areaCoords[raw]) return areaCoords[raw];
+    if (areaCoords[key]) return areaCoords[key];
+    try {
+      const lowerIndex = Object.fromEntries(Object.entries(areaCoords || {}).map(([k, v]) => [String(k).toLowerCase().trim(), v]));
+      if (lowerIndex[key]) return lowerIndex[key];
+    } catch (_) {}
+    if (geocodeCacheRef.current[key]) return geocodeCacheRef.current[key];
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query + ', Philippines')}`;
+      const res = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'gwaste-app/1.0 (educational)'
+        }
+      });
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        const value = { lat, lng };
+        geocodeCacheRef.current[key] = value;
+        return value;
+      }
+    } catch (_e) {}
+    return null;
+  };
+
+  // Fetch route from OSRM and draw on the Leaflet map
+  const drawPlannedRoute = async (startLat, startLng, endLat, endLng, destName = 'Destination') => {
+    if (!webviewRef.current || !mapInitialized) return;
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      const data = await res.json();
+      let coords = data?.routes?.[0]?.geometry?.coordinates || [];
+      // Fallback to straight line if routing fails
+      if (!Array.isArray(coords) || coords.length === 0) {
+        coords = [[startLng, startLat],[endLng, endLat]];
+      }
+      const latlngs = coords.map(([lng, lat]) => [lat, lng]);
+      const js = `
+        try {
+          window.routeLatLngs = ${JSON.stringify(latlngs)};
+          if (!window.routeLine) {
+            window.routeLine = L.polyline(window.routeLatLngs, { color: '#34c759', weight: 5, opacity: 0.95 }).addTo(window.map);
+          } else {
+            window.routeLine.setLatLngs(window.routeLatLngs);
+          }
+          try { window.routeLine.bringToFront(); } catch (e) {}
+          // Create or update a red destination marker at the end of the route
+          try {
+            const __dest = window.routeLatLngs[window.routeLatLngs.length - 1];
+            if (!window.routeDestMarker) {
+              const __pinUrl = 'https://img.icons8.com/color/48/map-pin.png';
+              window.routeDestMarker = L.marker(__dest, {
+                icon: L.icon({
+                  iconUrl: __pinUrl,
+                  iconRetinaUrl: __pinUrl,
+                  iconSize: [36, 36],
+                  iconAnchor: [18, 34],
+                  popupAnchor: [0, -28]
+                })
+              }).addTo(window.map);
+              window.routeDestMarker.bindPopup(${JSON.stringify(' ')} + ${JSON.stringify(destName)});
+            } else {
+              window.routeDestMarker.setLatLng(__dest);
+              try { window.routeDestMarker.setPopupContent(${JSON.stringify('')} + ${JSON.stringify(destName)}); } catch (e) {}
+            }
+            // Create or update a visible geofence circle around the destination (solid outline)
+            if (!window.routeGeofence) {
+              window.routeGeofence = L.circle(__dest, {
+                radius: ${GEOFENCE_RADIUS_METERS},
+                color: '#e53935',
+                weight: 2,
+                opacity: 1,
+                fillColor: '#ff8a80',
+                fillOpacity: 0.35
+              }).addTo(window.map);
+            } else {
+              window.routeGeofence.setLatLng(__dest);
+              window.routeGeofence.setRadius(${GEOFENCE_RADIUS_METERS});
+              try { window.routeGeofence.setStyle({ weight: 2, opacity: 1, color: '#e53935', fillColor: '#ff8a80', fillOpacity: 0.35 }); } catch (e) {}
+            }
+            try { window.routeGeofence.bringToFront(); } catch (e) {}
+            try { window.routeDestMarker.bringToFront(); } catch (e) {}
+          } catch (e) {}
+          // Fit once when route drawn
+          try { window.map.fitBounds(window.routeLine.getBounds(), { padding: [20, 20] }); } catch (e) {}
+        } catch (e) {}
+      `;
+      webviewRef.current.injectJavaScript(js);
+    } catch (_e) {}
+  };
+
+  // When next area or location changes, compute a planned route from current GPS to next scheduled area
+  useEffect(() => {
+    const run = async () => {
+      if (!nextArea || !nextArea.location) return;
+      if (!location) return;
+      const dest = await geocodeArea(nextArea.location);
+      if (!dest) return;
+      // Store current destination for geofencing
+      routeDestRef.current = { name: nextArea.location, lat: dest.lat, lng: dest.lng };
+      insideGeofenceRef.current = false; // reset on new destination
+      await drawPlannedRoute(location.latitude, location.longitude, dest.lat, dest.lng, nextArea.location);
+    };
+    run();
+  }, [nextArea, mapInitialized]);
+
+  const generateTimeIntervals = (startTime, endTime, areasInput) => {
+    const areas = normalizeAreas(areasInput);
+    if (!startTime || areas.length === 0) return [];
     
     try {
-      const start = new Date(`2000-01-01 ${startTime}`);
-      const end = new Date(`2000-01-01 ${endTime}`);
-      const totalMinutes = (end - start) / (1000 * 60);
-      
-      // Calculate interval based on number of areas (1-1.5 hours per area)
-      const intervalMinutes = Math.max(60, Math.min(90, Math.floor(totalMinutes / areas.length)));
+      const startMins = toMinutes(startTime);
+      let intervalMinutes = 60;
+      if (endTime) {
+        const endMins = toMinutes(endTime);
+        const totalMinutes = Math.max(0, endMins - startMins);
+        intervalMinutes = Math.max(30, Math.min(120, Math.floor(totalMinutes / areas.length) || 60));
+      }
       
       const intervals = [];
-      let currentTime = new Date(start);
+      let currentMins = startMins;
       
       areas.forEach((area, index) => {
-        const intervalEnd = new Date(currentTime.getTime() + intervalMinutes * 60000);
-        
-        // Don't exceed the end time
-        if (intervalEnd > end) {
-          intervalEnd.setTime(end.getTime());
+        let intervalEndMins = currentMins + intervalMinutes;
+        if (endTime) {
+          const endMins = toMinutes(endTime);
+          if (intervalEndMins > endMins) intervalEndMins = endMins;
         }
         
         intervals.push({
           area: area,
-          startTime: currentTime.toTimeString().slice(0, 5),
-          endTime: intervalEnd.toTimeString().slice(0, 5),
+          startTime: toHHMM(currentMins),
+          endTime: toHHMM(intervalEndMins),
           index: index + 1
         });
         
-        currentTime = new Date(intervalEnd);
+        currentMins = intervalEndMins;
         
         // Stop if we've reached the end time
-        if (currentTime >= end) return;
+        if (endTime && currentMins >= toMinutes(endTime)) return;
       });
       
       return intervals;
@@ -99,41 +318,61 @@ export default function CollectorMapScreen() {
   };
 
   const loadScheduleData = async () => {
-    if (!collector?.driver) return;
-
     try {
-      const { data: routesData, error } = await supabase
+      // Prefer exact driver match, fallback to name field if present
+      let queryValue = collector?.driver || collector?.collector_name || collector?.first_name || null;
+      if (!queryValue) return;
+
+      const buildSchedule = (rows) => {
+        const scheduleList = [];
+        (rows || []).forEach((data) => {
+          const areasArr = normalizeAreas(data?.areas);
+          const startTime = data?.time || data?.startTime || data?.start_time || null;
+          const endTime = data?.endTime || data?.end_time || null;
+          const routeNum = data?.route || data?.route_number || data?.routeNo || null;
+          if (startTime && areasArr.length > 0) {
+            const timeIntervals = generateTimeIntervals(startTime, endTime, areasArr);
+            timeIntervals.forEach((interval) => {
+              scheduleList.push({
+                time: interval.startTime,
+                endTime: interval.endTime,
+                location: interval.area,
+                routeNumber: routeNum,
+                type: data?.type || 'Waste Collection',
+                frequency: data?.frequency,
+                dayOff: data?.dayOff || data?.day_off,
+                areaIndex: interval.index,
+              });
+            });
+          }
+        });
+        scheduleList.sort((a, b) => new Date(`2000-01-01 ${a.time}`) - new Date(`2000-01-01 ${b.time}`));
+        return scheduleList;
+      };
+
+      let { data: routesData, error } = await supabase
         .from('routes')
         .select('*')
-        .eq('driver', collector.driver);
+        .eq('driver', queryValue);
       if (error) throw error;
 
-      let scheduleList = [];
-      (routesData || []).forEach(data => {
-        if (data.time && data.areas && data.areas.length > 0) {
-          const timeIntervals = generateTimeIntervals(data.time, data.endTime, data.areas);
-          timeIntervals.forEach(interval => {
-            const scheduleEntry = {
-              time: interval.startTime,
-              endTime: interval.endTime,
-              location: interval.area,
-              routeNumber: data.route,
-              type: data.type || 'Waste Collection',
-              frequency: data.frequency,
-              dayOff: data.dayOff,
-              areaIndex: interval.index
-            };
-            scheduleList.push(scheduleEntry);
-          });
+      let scheduleList = buildSchedule(routesData);
+
+      // Fallback: if nothing found and we have a different possible driver name
+      if (scheduleList.length === 0 && collector?.collector_name && collector.collector_name !== queryValue) {
+        const alt = await supabase.from('routes').select('*').eq('driver', collector.collector_name);
+        if (!alt.error) {
+          scheduleList = buildSchedule(alt.data);
         }
-      });
-      
-      scheduleList.sort((a, b) => new Date(`2000-01-01 ${a.time}`) - new Date(`2000-01-01 ${b.time}`));
+      }
+
       setTodaysSchedule(scheduleList);
       updateCurrentAndNextAreas(scheduleList);
-      
     } catch (error) {
       console.error('Error loading schedule data:', error);
+      setTodaysSchedule([]);
+      setCurrentArea(null);
+      setNextArea(null);
     }
   };
 
@@ -145,7 +384,8 @@ export default function CollectorMapScreen() {
     }
 
     const now = new Date();
-    const currentTime = now.toTimeString().slice(0, 5);
+    const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const currentMins = toMinutes(currentTime);
     
     // Find current area (if we're within its time range)
     let current = null;
@@ -156,9 +396,14 @@ export default function CollectorMapScreen() {
       const isCollected = collectedAreas.has(item.location);
       
       if (!isCollected) {
-        if (!current && currentTime >= item.time && currentTime <= item.endTime) {
+        const startM = toMinutes(item.time);
+        let endM = toMinutes(item.endTime);
+        if (endM == null) {
+          endM = (startM || 0) + 90; // assume 90 mins window if end missing
+        }
+        if (!current && startM != null && currentMins >= startM && currentMins <= endM) {
           current = item;
-        } else if (!next && currentTime < item.time) {
+        } else if (!next && startM != null && currentMins < startM) {
           next = item;
           break;
         }
@@ -247,21 +492,34 @@ export default function CollectorMapScreen() {
   // Function to update marker position smoothly
   const updateMarkerPosition = (newLat, newLng) => {
     if (webviewRef.current && mapInitialized) {
+      // keep a short breadcrumb trail in state (max 300 points)
+      setPathCoords((prev) => {
+        const next = [...prev, { latitude: newLat, longitude: newLng }];
+        return next.length > 300 ? next.slice(next.length - 300) : next;
+      });
       const script = `
         if (window.marker && window.map) {
+          // Do not auto-pan to driver to avoid camera bouncing when a route is displayed
           // Smooth animation to new position
           window.marker.setLatLng([${newLat}, ${newLng}]);
-          
-          // Smooth pan to follow the marker (optional - you can remove this if you don't want auto-pan)
-          window.map.panTo([${newLat}, ${newLng}], {
-            animate: true,
-            duration: 1.0
-          });
-          
           // Update popup content with current coordinates
           window.marker.getPopup().setContent(
-            "You (Collector)<br>Lat: ${newLat.toFixed(5)}<br>Lng: ${newLng.toFixed(5)}"
+            "You (${driverLabel.replace(/"/g, '\\"')})<br>Lat: ${newLat.toFixed(5)}<br>Lng: ${newLng.toFixed(5)}"
           );
+
+          // Update or create the path polyline
+          try {
+            window.__pathPoints = window.__pathPoints || [];
+            window.__pathPoints.push([${newLat}, ${newLng}]);
+            if (window.__pathPoints.length > 300) {
+              window.__pathPoints = window.__pathPoints.slice(window.__pathPoints.length - 300);
+            }
+            if (!window.pathLine) {
+              window.pathLine = L.polyline(window.__pathPoints, { color: '#1e88e5', weight: 4, opacity: 0.9 }).addTo(window.map);
+            } else {
+              window.pathLine.setLatLngs(window.__pathPoints);
+            }
+          } catch (e) {}
         }
       `;
       webviewRef.current.injectJavaScript(script);
@@ -273,11 +531,11 @@ export default function CollectorMapScreen() {
     if (webviewRef.current && mapInitialized) {
       const script = `
         if (window.marker && window.map) {
-          // Set initial position without animation
+          // Set initial position without animation (do not change camera here)
           window.marker.setLatLng([${lat}, ${lng}]);
-          window.map.setView([${lat}, ${lng}], 15);
+          // keep current zoom/center to prevent bouncing
           window.marker.getPopup().setContent(
-            "You (Collector)<br>Lat: ${lat.toFixed(5)}<br>Lng: ${lng.toFixed(5)}"
+            "You (${driverLabel.replace(/"/g, '\\"')})<br>Lat: ${lat.toFixed(5)}<br>Lng: ${lng.toFixed(5)}"
           );
         }
       `;
@@ -326,6 +584,56 @@ export default function CollectorMapScreen() {
 
           // Update marker position smoothly
           updateMarkerPosition(coords.latitude, coords.longitude);
+
+          // Geofence check against destination using fixed radius
+          const destInfo = routeDestRef.current;
+          if (destInfo && destInfo.lat != null && destInfo.lng != null) {
+            try {
+              const dist = distanceMeters(coords.latitude, coords.longitude, destInfo.lat, destInfo.lng);
+              const wasInside = insideGeofenceRef.current;
+              const isInside = dist <= GEOFENCE_RADIUS_METERS;
+              if (!wasInside && isInside) {
+                insideGeofenceRef.current = true;
+                // TODO: Notify residents within this area (commented until phone numbers are implemented)
+                // await supabase.functions.invoke('notify-residents', { body: { area: destInfo.name } });
+                // Set Current Area based on actual location (geofence entry)
+                const entry = findScheduleEntryByLocation(destInfo.name);
+                if (entry) {
+                  setCurrentArea(entry);
+                  // Keep Next Area as is until collection completes
+                } else {
+                  // Fallback: minimal current area when no schedule match
+                  setCurrentArea({ location: destInfo.name, time: null, endTime: null });
+                }
+              } else if (wasInside && !isInside) {
+                insideGeofenceRef.current = false;
+                try {
+                  // Notify admin that the area's garbage is collected
+                  await supabase.from('notifications').insert({
+                    title: 'Collection Completed',
+                    message: `${destInfo.name} garbage has been collected`,
+                    type: 'collection_completed',
+                    area: destInfo.name,
+                  });
+                } catch (_e) {}
+                setCollectedAreas((prev) => {
+                  const next = new Set(prev);
+                  if (destInfo.name) next.add(destInfo.name);
+                  return next;
+                });
+                // Clear Current Area on exit (collection finished)
+                setCurrentArea(null);
+                addCollectedMarker(destInfo.lat, destInfo.lng, destInfo.name);
+                try {
+                  const nextCandidate = computeNextUncollected(todaysSchedule, new Set([...collectedAreas, destInfo.name]));
+                  if (nextCandidate) {
+                    setNextArea(nextCandidate);
+                    await planRouteToArea(nextCandidate.location);
+                  }
+                } catch (_e) {}
+              }
+            } catch (_e) {}
+          }
 
           if (!collector) {
             // addLog("⚠️ Driver data not loaded yet, skipping GPS update.");
@@ -414,7 +722,14 @@ export default function CollectorMapScreen() {
                 iconSize: [32, 32],
                 iconAnchor: [16, 16],
               })
-            }).addTo(window.map).bindPopup("You (Collector)");
+            }).addTo(window.map).bindPopup("You (${driverLabel.replace(/"/g, '\\"')})");
+
+            // Initialize empty path polyline
+            window.__pathPoints = [];
+            window.pathLine = L.polyline(window.__pathPoints, { color: '#1e88e5', weight: 4, opacity: 0.9 }).addTo(window.map);
+
+            // Reserved holder for planned route polyline
+            window.routeLine = null;
 
             // Signal that map is ready
             window.ReactNativeWebView.postMessage(JSON.stringify({type: 'mapReady'}));
@@ -522,7 +837,7 @@ export default function CollectorMapScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#ffffff' },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -540,6 +855,7 @@ const styles = StyleSheet.create({
     borderRadius: 0,
     overflow: 'hidden',
     elevation: 5,
+    backgroundColor: '#ffffff',
   },
   webview: { ...StyleSheet.absoluteFillObject },
   placeholder: { flex: 1, backgroundColor: '#f2f2f2' },
