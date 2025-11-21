@@ -1,9 +1,11 @@
+ 
+ 
 /* eslint-disable import/first */
 import { Feather } from "@expo/vector-icons";
+import { Picker } from '@react-native-picker/picker';
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -11,7 +13,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
 import { vw } from "../utils/responsive";
 export const options = {
@@ -22,7 +24,6 @@ export const options = {
 import { ThemedText } from "../components/ThemedText";
 import InputField from "../components/ui/InputField";
 import PrimaryButton from "../components/ui/PrimaryButton";
-import { supabase } from "../services/supabaseClient";
 
 export default function ResidentSignup() {
   const router = useRouter();
@@ -31,24 +32,48 @@ export default function ResidentSignup() {
   const [lastName, setLastName] = useState("");
   const [address, setAddress] = useState("");
   const [purok, setPurok] = useState("");
-  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const BARANGAYS = [
+    "Bungtod",
+    "Carbon",
+    "Cogon",
+    "La Purisima Concepcion",
+    "Lourdes",
+    "Sambag",
+    "San Vicente",
+    "Santo Rosario",
+    "Anonang Norte",
+    "Anonang Sur",
+    "Banban",
+    "Binabag",
+    "Cayang",
+    "Dakit",
+    "Don Pedro Rodriguez",
+    "Gairan",
+    "Guadalupe",
+    "La Paz",
+    "Libertad",
+    "Malingin",
+    "Marangog",
+    "Nailon",
+    "Odlot",
+    "Pandan",
+    "Polambato",
+    "Santo Niño",
+    "Siocon",
+    "Sudlonon",
+    "Taytayan",
+  ];
+  
 
   const handleSignup = async () => {
-    if (
-      !firstName.trim() ||
-      !lastName.trim() ||
-      !address.trim() ||
-      !purok.trim() ||
-      !phone.trim()
-    ) {
+    if (!firstName.trim() || !lastName.trim() || !address.trim() || !purok.trim()) {
       Alert.alert(
         "Missing info",
-        "Please fill out first name, last name, address, purok, and phone."
+        "Please fill out first name, last name, address, and purok."
       );
       return;
     }
@@ -61,27 +86,17 @@ export default function ResidentSignup() {
       return;
     }
 
-    setLoading(true);
-    try {
-      const { error } = await supabase
-        .from('residents')
-        .insert({
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          resident_address: address.trim(),
-          purok: purok.trim(),
-          phone_number: phone.trim(),
-          password: password.trim(),
-        });
-      if (error) throw error;
-
-      Alert.alert("Success", "Signup successful. You can now log in.");
-      router.replace("/login");
-    } catch (err) {
-      Alert.alert("Error", err?.message || "Could not complete signup.");
-    } finally {
-      setLoading(false);
-    }
+    // Proceed to PhoneAuth screen to enter phone and OTP
+    router.push({
+      pathname: "/PhoneAuth",
+      params: {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        resident_address: address.trim(),
+        purok: purok.trim(),
+        password: password.trim(),
+      },
+    });
   };
 
   return (
@@ -126,28 +141,28 @@ export default function ResidentSignup() {
             style={styles.input}
           />
 
-          <InputField
-            icon={<Feather name="map-pin" size={20} color="#8BC500" />}
-            placeholder="Address"
-            value={address}
-            onChangeText={setAddress}
-            style={styles.input}
-          />
+          <View style={styles.input}>
+            <View style={styles.pickerContainer}>
+              <View style={styles.pickerIcon}>{<Feather name="map-pin" size={20} color="#8BC500" />}</View>
+              <Picker
+                selectedValue={address}
+                onValueChange={(v) => setAddress(v)}
+                style={styles.picker}
+                mode="dropdown"
+              >
+                <Picker.Item label="Select Barangay" value="" />
+                {BARANGAYS.map((b) => (
+                  <Picker.Item key={b} label={b} value={b} />
+                ))}
+              </Picker>
+            </View>
+          </View>
 
           <InputField
             icon={<Feather name="home" size={20} color="#8BC500" />}
             placeholder="Purok"
             value={purok}
             onChangeText={setPurok}
-            style={styles.input}
-          />
-
-          <InputField
-            icon={<Feather name="phone" size={20} color="#8BC500" />}
-            placeholder="Phone"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
             style={styles.input}
           />
 
@@ -188,13 +203,8 @@ export default function ResidentSignup() {
           <PrimaryButton
             onPress={handleSignup}
             style={styles.button}
-            disabled={loading}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Sign Up</Text>
-            )}
+            <Text style={styles.buttonText}>Continue</Text>
           </PrimaryButton>
 
           <Text style={styles.link}>
@@ -270,5 +280,21 @@ const styles = StyleSheet.create({
   },
   linkText: {
     color: "#87CEEB",
+  },
+  pickerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    minHeight: 48,
+  },
+  pickerIcon: {
+    marginRight: 8,
+  },
+  picker: {
+    flex: 1,
+    height: 52,
+    paddingVertical: 6,
   },
 });

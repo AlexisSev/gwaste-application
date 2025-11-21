@@ -1,16 +1,16 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useResidentAuth } from '../../hooks/useResidentAuth';
@@ -18,7 +18,7 @@ import { supabase } from '../../services/supabaseClient';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { resident, logout } = useResidentAuth();
+  const { resident, logout, loading: authLoading } = useResidentAuth();
   const [residentData, setResidentData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -40,7 +40,6 @@ export default function ProfileScreen() {
       }
     } else {
       setLoading(false);
-      console.log('No resident ID found:', resident);
     }
   }, [resident?.id]);
 
@@ -101,7 +100,7 @@ export default function ProfileScreen() {
     Alert.alert('Coming Soon', 'Edit profile functionality will be available soon!');
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -181,14 +180,6 @@ export default function ProfileScreen() {
             </View>
 
             <View style={styles.infoRow}>
-              <Feather name="mail" size={20} color="#8BC500" />
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Email</Text>
-                <Text style={styles.infoValue}>{resident?.email}</Text>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
               <Feather name="phone" size={20} color="#8BC500" />
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Phone Number</Text>
@@ -242,14 +233,6 @@ export default function ProfileScreen() {
                     : 'Unknown'
                   }
                 </Text>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Feather name="shield" size={20} color="#8BC500" />
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Account Status</Text>
-                <Text style={[styles.infoValue, styles.statusActive]}>Active</Text>
               </View>
             </View>
           </View>

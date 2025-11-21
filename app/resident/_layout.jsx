@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import { Tabs, usePathname } from 'expo-router';
-import React from 'react';
 import { Platform } from 'react-native';
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from '../../hooks/useColorScheme';
@@ -31,7 +30,7 @@ export default function ResidentTabLayout() {
         contentStyle: { backgroundColor: Colors[colorScheme ?? 'light'].background },
       }}>
       <Tabs.Screen
-        name="index"
+        name="residenthome"
         options={{
           title: 'Home',
           tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
@@ -68,6 +67,12 @@ export default function ResidentTabLayout() {
       />
       <Tabs.Screen
         name="settings"
+        options={{
+          href: null, // This hides the tab from the tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="report-issue"
         options={{
           href: null, // This hides the tab from the tab bar
         }}

@@ -8,10 +8,12 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useResidentAuth } from '../../hooks/useResidentAuth';
 import { supabase } from '../../services/supabaseClient';
 
 export default function ResidentIndex() {
   const params = useLocalSearchParams();
+  const { resident } = useResidentAuth();
   const [residentData, setResidentData] = useState(null);
   const [isDropdownVisible, setIsDropdownVisible] = useState(false);
   const [scheduleData, setScheduleData] = useState(null);
@@ -383,7 +385,15 @@ export default function ResidentIndex() {
     const loadResidentData = async () => {
       try {
         setLoading(true);
-        if (params.firstName && params.purok && params.address) {
+        // Prefer auth context resident if available
+        if (resident && (resident.first_name || resident.resident_address)) {
+          setResidentData({
+            firstName: resident.first_name || null,
+            purok: resident.purok || null,
+            address: resident.resident_address || resident.address || null,
+          });
+        } else if (params.firstName && params.purok && params.address) {
+          // Fallback to params (legacy)
           setResidentData({
             firstName: params.firstName,
             purok: params.purok,
@@ -402,7 +412,7 @@ export default function ResidentIndex() {
     };
 
     loadResidentData();
-  }, [params.firstName, params.purok, params.address, residentData?.purok]);
+  }, [resident?.id, resident?.first_name, params.firstName, params.purok, params.address]);
 
   // Load collection status when schedule is available
   useEffect(() => {
@@ -461,6 +471,9 @@ export default function ResidentIndex() {
     );
   };
 
+  // Prefer name from auth context, then local state, then URL params
+  const displayName = (resident?.first_name || residentData?.firstName || params.firstName || 'Resident');
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -500,6 +513,20 @@ export default function ResidentIndex() {
             }}
           >
             <Text style={styles.dropdownText}>Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/resident/notifications');
+            }}
+          >
+            <View style={styles.notificationRow}>
+              <Text style={styles.dropdownText}>Notifications</Text>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{Array.isArray(notifications) ? (notifications.length > 99 ? '99+' : (notifications.length > 9 ? '9+' : notifications.length)) : 0}</Text>
+              </View>
+            </View>
           </TouchableOpacity>
           <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
             <Text style={styles.dropdownText}>Logout</Text>
@@ -806,6 +833,25 @@ const styles = StyleSheet.create({
   dropdownText: {
     fontSize: 16,
     color: '#333'
+  },
+  notificationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  badge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700'
   },
   chatbotFab: {
     position: 'absolute',

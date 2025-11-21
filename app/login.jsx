@@ -7,8 +7,8 @@ import { ThemedText } from '../components/ThemedText';
 import InputField from '../components/ui/InputField';
 import PrimaryButton from '../components/ui/PrimaryButton';
 import { useCollectorAuth } from '../hooks/useCollectorAuthSupabase';
+import { useResidentAuth } from '../hooks/useResidentAuth';
 import { vw } from '../utils/responsive';
-import { supabase } from '../services/supabaseClient';
 
 function LoginScreen() {
   const [firstName, setFirstName] = useState('');
@@ -16,7 +16,8 @@ function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const { login } = useCollectorAuth();
+  const { login: collectorLogin } = useCollectorAuth();
+  const { login: residentLogin } = useResidentAuth();
 
   const handleCollectorLogin = async () => {
     if (!firstName || !password) {
@@ -26,35 +27,18 @@ function LoginScreen() {
     
     setLoading(true);
     try {
-      // Try resident login first via Supabase
-      const f = firstName.trim();
-      const p = password.trim();
-      let residentMatch = null;
-      const { data: resResidents, error: resErr } = await supabase
-        .from('residents')
-        .select('*')
-        .ilike('first_name', f)
-        .limit(20);
-      if (resErr) throw resErr;
-      if (Array.isArray(resResidents)) {
-        residentMatch = resResidents.find(r => String(r.first_name || '').trim().toLowerCase() === f.toLowerCase() && String(r.password || '').trim() === p) || null;
-      }
-
-      if (residentMatch) {
-        Alert.alert('Success', `Welcome, ${residentMatch.first_name || f}!`);
-        router.replace({
-          pathname: '/resident',
-          params: {
-            firstName: residentMatch.first_name || f,
-            purok: residentMatch.purok,
-            address: residentMatch.resident_address || residentMatch.address,
-          }
-        });
+      // Try resident login first via auth context (stores resident in AsyncStorage + context)
+      try {
+        const res = await residentLogin(firstName, password);
+        Alert.alert('Success', `Welcome, ${res.first_name || firstName}!`);
+        router.replace('/resident');
         return;
+      } catch (_) {
+        // fall through to collector login
       }
 
       // Fall back to collector login
-      const collectorData = await login(firstName, password);
+      const collectorData = await collectorLogin(firstName, password);
       Alert.alert('Success', `Welcome back, ${collectorData.firstName}!`);
       router.replace('/collector/home');
     } catch (error) {
