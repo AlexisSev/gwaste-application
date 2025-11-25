@@ -31,25 +31,96 @@ const getNextCollectionDay = (routes) => {
   return null;
 };
 
+// Smart responses for common questions (no Groq API needed!)
+const getSmartResponse = (message: string | undefined) => {
+  const msgLower = (message || "").toLowerCase().trim();
+  
+  // Collection schedules
+  if (msgLower.includes("schedule") || msgLower === "what are collection schedules?") {
+    return {
+      reply: "Collection schedules vary by area and waste type. You can view your personalized collection schedule by:\n\n1. Going to the Schedule tab\n2. Checking the 'Next Collection' card on the home screen\n3. Enabling location services to see real-time truck tracking\n\nWould you like to know more about your specific area's schedule?",
+      suggestions: ["View my schedule", "Track garbage truck", "Change notification settings"]
+    };
+  }
+  
+  // Report issue
+  if (msgLower.includes("report") || msgLower === "how do i report an issue?") {
+    return {
+      reply: "To report an issue:\n\n1. Tap the 'Report Issue' button\n2. Select the issue type (missed collection, damaged bin, etc.)\n3. Add a description and photos if needed\n4. Submit your report\n\nOur team will review and respond within 24 hours. You can also track your reported issues in your profile.",
+      suggestions: ["Report an Issue", "View my reports", "Contact support"]
+    };
+  }
+  
+  // Waste types
+  if (msgLower.includes("waste type") || msgLower.includes("what waste") || msgLower === "what waste types are collected?") {
+    return {
+      reply: "We collect several types of waste:\n\n🗑️ Biodegradable - Food scraps, yard waste\n♻️ Recyclable - Paper, plastic, glass, metal\n⚠️ Non-biodegradable - General waste\n🔋 E-Waste - Electronics, batteries\n☢️ Hazardous - Chemicals, paint, oil\n\nEach type has specific collection days. Check your schedule for details!",
+      suggestions: ["View collection schedule", "How to segregate waste", "E-waste disposal"]
+    };
+  }
+  
+  // Waste segregation
+  if (msgLower.includes("segregat") || msgLower.includes("separate") || msgLower === "how to segregate waste properly?") {
+    return {
+      reply: "Proper waste segregation helps the environment! 🌍\n\n✅ Biodegradable: Food waste, garden clippings\n✅ Recyclable: Clean plastic, paper, cardboard, metal\n✅ Residual: Mixed waste, soiled materials\n✅ Special: Electronics, batteries, hazardous items\n\nTip: Rinse recyclables before disposal!",
+      suggestions: ["View waste categories", "Eco tips", "What goes where?"]
+    };
+  }
+  
+  // Track truck
+  if (msgLower.includes("track") || msgLower.includes("where is") || msgLower === "track garbage truck") {
+    return {
+      reply: "Track the garbage truck in real-time! 🚛\n\n1. Go to the Map tab\n2. Enable location permissions\n3. See nearby trucks and estimated arrival time\n4. Get notified when truck is near your area\n\nYou can view distance and route on the live map!",
+      suggestions: ["Open map", "Enable notifications", "View route details"]
+    };
+  }
+  
+  // Eco tips
+  if (msgLower.includes("eco") || msgLower.includes("environment") || msgLower === "eco tips") {
+    return {
+      reply: "Help the environment with these eco tips! 🌱\n\n♻️ Reduce single-use plastics\n🎒 Use reusable bags\n💧 Compost organic waste\n📦 Recycle properly\n🔋 Dispose e-waste safely\n🌳 Reduce, reuse, recycle!\n\nSmall actions make a big difference!",
+      suggestions: ["More eco tips", "Composting guide", "Recycling benefits"]
+    };
+  }
+  
+  // Contact/support
+  if (msgLower.includes("contact") || msgLower.includes("support") || msgLower.includes("help")) {
+    return {
+      reply: "Need help? We're here! 💚\n\nContact us through:\n📧 Email: support@gwaste.com\n📱 Hotline: (123) 456-7890\n💬 In-app chat (here!)\n🏢 Office: Visit our local branch\n\nResponse time: Usually within 24 hours.",
+      suggestions: ["Report an Issue", "FAQs", "Office locations"]
+    };
+  }
+  
+  return null; // No smart response found, use Groq API
+};
+
 // Helper function to generate contextual suggestions
-const generateSuggestions = (userMessage, routes) => {
+const generateSuggestions = (userMessage: string, routes: any[]) => {
   const messageLower = (userMessage || "").toLowerCase();
   const baseSuggestions = [
-    "Tell me the schedule",
-    "Who's my driver?",
-    "What time?",
-    "Collection type?",
+    "What are collection schedules?",
+    "How do I report an issue?",
+    "What waste types are collected?",
+    "Track garbage truck"
   ];
 
   // Customize suggestions based on user message
   if (messageLower.includes("time") || messageLower.includes("when")) {
-    return ["What's the end time?", "Next collection?", "Collection frequency?"];
+    return ["View my schedule", "Next collection?", "Track garbage truck"];
   }
   if (messageLower.includes("driver") || messageLower.includes("crew")) {
     return ["What time is collection?", "What garbage type?", "Full schedule"];
   }
   if (messageLower.includes("type") || messageLower.includes("garbage")) {
-    return ["Collection time?", "Driver info", "Next collection?"];
+    return ["How to segregate waste properly?", "What waste types are collected?", "Eco tips"];
+  }
+  if (routes.length === 0) {
+    return [
+      "What are collection schedules?",
+      "Track garbage truck",
+      "How do I report an issue?",
+      "Contact support"
+    ];
   }
 
   return baseSuggestions;
@@ -78,7 +149,17 @@ serve(async (req) => {
 
     if (residentError || !resident) throw new Error("Resident not found");
 
-    // 2.5 Check if message is a greeting
+    // 2.5 Check for smart responses first (instant answers!)
+    const smartResponse = getSmartResponse(message);
+    if (smartResponse) {
+      return new Response(JSON.stringify(smartResponse), {
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+    }
+
+    // 2.6 Check if message is a greeting
     const greetingPatterns = /^(hi|hello|hey|greetings|good morning|good afternoon|good evening|howdy|sup)$/i;
     const isGreeting = greetingPatterns.test((message || "").trim());
 
@@ -103,7 +184,7 @@ serve(async (req) => {
 
     // 4. Filter routes by day off
     const activeRoutes = matchingRoutes.filter(
-      (r) => !r.dayoff || !r.dayoff.toLowerCase().includes(dayOfWeek.toLowerCase())
+      (r: any) => !r.dayoff || !r.dayoff.toLowerCase().includes(dayOfWeek.toLowerCase())
     );
 
     // 5. Handle greeting messages
@@ -166,13 +247,14 @@ The resident just greeted you. Reply with a friendly greeting and then provide a
       } else {
         const nextCollectionDay = getNextCollectionDay(matchingRoutes);
         const suggestions = [
-          "When is my next collection?",
-          "Garbage schedule",
-          "Contact support",
+          "What are collection schedules?",
+          "How to segregate waste properly?",
+          "Track garbage truck",
+          "Contact support"
         ];
         return new Response(
           JSON.stringify({
-            reply: `Hi ${resident.first_name}! 👋 Thanks for reaching out. There's no garbage collection scheduled for your address today. ${nextCollectionDay ? `Your next collection is ${nextCollectionDay}.` : ""}`,
+            reply: `Hi ${resident.first_name}! 👋 Thanks for reaching out. There's no garbage collection scheduled for your address today. ${nextCollectionDay ? `Your next collection is ${nextCollectionDay}.` : ""}\n\nHow can I help you today?`,
             suggestions,
           }),
           { headers: { "Content-Type": "application/json" } }
@@ -180,8 +262,31 @@ The resident just greeted you. Reply with a friendly greeting and then provide a
       }
     }
 
-    // 5. Prepare structured data for Groq (for non-greeting messages)
-    // Even if no active routes, still use AI to handle user queries
+    // 6. Check if message is asking about general info (no routes needed)
+    const generalInfoPatterns = [
+      /how (do|can) i/i,
+      /what (is|are)/i,
+      /tell me about/i,
+      /explain/i,
+      /info/i
+    ];
+    
+    const isGeneralInfo = generalInfoPatterns.some(pattern => pattern.test(message || ""));
+    
+    // If asking general questions and no routes, provide helpful response
+    if (isGeneralInfo && activeRoutes.length === 0) {
+      const suggestions = generateSuggestions(message, activeRoutes);
+      return new Response(JSON.stringify({
+        reply: `I'd be happy to help you with that! While there's no collection scheduled for your area today, I can provide information about our waste management services.\n\nWhat specific information are you looking for?`,
+        suggestions
+      }), {
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+    }
+
+    // 7. Prepare structured data for Groq (for specific schedule queries)
     const routeInfo = activeRoutes.map((r) => ({
       route: r.route,
       driver: r.driver,
