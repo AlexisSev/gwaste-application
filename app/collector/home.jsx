@@ -1,8 +1,8 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { AlertCircle, CheckCircle, MapPin } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
 import { supabase } from '../../services/supabaseClient';
@@ -18,6 +18,7 @@ export default function LandingScreen() {
   const [collectedAreas, setCollectedAreas] = useState(new Set());
   const [locationPermission, setLocationPermission] = useState(false);
   const [collectedAreasLoaded, setCollectedAreasLoaded] = useState(false);
+  const [profileImage, setProfileImage] = useState(null);
   const router = useRouter();
   const { collector, logout } = useCollectorAuth();
 
@@ -336,6 +337,22 @@ export default function LandingScreen() {
       if (collector) {
         try {
           setDisplayName(collector.driver || collector.firstName || '');
+          
+          // Fetch profile image from database if not already in collector object
+          if (collector.profile_image_base64) {
+            setProfileImage(collector.profile_image_base64);
+          } else if (collector.id) {
+            const { data: collectorData, error: collectorError } = await supabase
+              .from('collectors')
+              .select('profile_image_base64')
+              .eq('id', collector.id)
+              .single();
+            
+            if (!collectorError && collectorData?.profile_image_base64) {
+              setProfileImage(collectorData.profile_image_base64);
+            }
+          }
+
           const { data: routesData, error } = await supabase
             .from('routes')
             .select('*')
@@ -382,11 +399,37 @@ export default function LandingScreen() {
         setDisplayName('');
         setTodaysSchedule([]);
         setRouteNames([]);
+        setProfileImage(null);
       }
       setLoading(false);
     };
     fetchCollectorAndRoutes();
   }, [collector]);
+
+  // Refresh profile image when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const refreshProfileImage = async () => {
+        if (collector?.id) {
+          try {
+            const { data, error } = await supabase
+              .from('collectors')
+              .select('profile_image_base64')
+              .eq('id', collector.id)
+              .single();
+            
+            if (!error && data?.profile_image_base64) {
+              setProfileImage(data.profile_image_base64);
+            }
+          } catch (err) {
+            console.error('Error refreshing profile image:', err);
+          }
+        }
+      };
+      
+      refreshProfileImage();
+    }, [collector?.id])
+  );
 
   useEffect(() => {
     if (!collector) {
@@ -468,7 +511,11 @@ export default function LandingScreen() {
         <TouchableOpacity style={styles.profileContainer} onPress={() => setShowDropdown(v => !v)}>
           <View style={styles.profileCircle}>
             <Image 
-              source={{ uri: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=100&h=100&fit=crop&crop=face' }}
+              source={
+                profileImage 
+                  ? { uri: profileImage }
+                  : require('../../assets/images/icon.png')
+              }
               style={styles.profileImage}
             />
             <View style={styles.onlineIndicator} />

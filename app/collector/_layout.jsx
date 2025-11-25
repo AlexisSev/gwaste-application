@@ -52,6 +52,12 @@ export default function CollectorTabLayout() {
         }}
       />
       <Tabs.Screen
+        name="profile"
+        options={{
+          href: null, // This completely hides the tab from the tab bar
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           href: null, // This completely hides the tab from the tab bar

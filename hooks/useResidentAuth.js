@@ -72,9 +72,30 @@ export const ResidentAuthProvider = ({ children }) => {
     }
   };
 
+  const refreshResident = async () => {
+    try {
+      if (!resident?.id) return;
+      
+      const { data, error } = await supabase
+        .from('residents')
+        .select('*')
+        .eq('id', resident.id)
+        .single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        await AsyncStorage.setItem('residents', JSON.stringify(data));
+        setResident(data);
+      }
+    } catch (error) {
+      console.error('Error refreshing resident:', error);
+    }
+  };
+
   const isAuthenticated = () => resident !== null;
 
-  const value = { resident, loading, login, logout, isAuthenticated };
+  const value = { resident, loading, login, logout, refreshResident, isAuthenticated };
 
   return (
     <ResidentAuthContext.Provider value={value}>

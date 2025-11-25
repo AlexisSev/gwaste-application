@@ -41,8 +41,73 @@ const GwasteChatbot = () => {
     );
   };
 
+  // Smart suggestion responses - instant answers for common questions
+  const smartResponses = {
+    "What are collection schedules?": {
+      answer: "Collection schedules vary by area and waste type. You can view your personalized collection schedule by:\n\n1. Going to the Schedule tab\n2. Checking the 'Next Collection' card on the home screen\n3. Enabling location services to see real-time truck tracking\n\nWould you like to know more about your specific area's schedule?",
+      suggestions: ["View my schedule", "Track garbage truck", "Change notification settings"]
+    },
+    "How do I report an issue?": {
+      answer: "To report an issue:\n\n1. Tap the 'Report Issue' button\n2. Select the issue type (missed collection, damaged bin, etc.)\n3. Add a description and photos if needed\n4. Submit your report\n\nOur team will review and respond within 24 hours. You can also track your reported issues in your profile.",
+      suggestions: ["Report an Issue", "View my reports", "Contact support"]
+    },
+    "What waste types are collected?": {
+      answer: "We collect several types of waste:\n\n🗑️ Biodegradable - Food scraps, yard waste\n♻️ Recyclable - Paper, plastic, glass, metal\n⚠️ Non-biodegradable - General waste\n🔋 E-Waste - Electronics, batteries\n☢️ Hazardous - Chemicals, paint, oil\n\nEach type has specific collection days. Check your schedule for details!",
+      suggestions: ["View collection schedule", "How to segregate waste", "E-waste disposal"]
+    },
+    "How to segregate waste properly?": {
+      answer: "Proper waste segregation helps the environment! 🌍\n\n✅ Biodegradable: Food waste, garden clippings\n✅ Recyclable: Clean plastic, paper, cardboard, metal\n✅ Residual: Mixed waste, soiled materials\n✅ Special: Electronics, batteries, hazardous items\n\nTip: Rinse recyclables before disposal!",
+      suggestions: ["View waste categories", "Eco tips", "What goes where?"]
+    },
+    "Track garbage truck": {
+      answer: "Track the garbage truck in real-time! 🚛\n\n1. Go to the Map tab\n2. Enable location permissions\n3. See nearby trucks and estimated arrival time\n4. Get notified when truck is near your area\n\nYou can view distance and route on the live map!",
+      suggestions: ["Open map", "Enable notifications", "View route details"]
+    },
+    "View my schedule": {
+      answer: "Your collection schedule shows:\n\n📅 Next pickup date and time\n📍 Your area coverage\n🚛 Truck route information\n⏰ Estimated arrival window\n\nGo to the Schedule tab to see your full weekly schedule!",
+      suggestions: ["Open schedule", "Set reminders", "View past collections"]
+    },
+    "Enable notifications": {
+      answer: "Stay updated with notifications! 🔔\n\nYou'll receive alerts for:\n• Truck approaching your area\n• Schedule changes\n• Missed collections\n• Special announcements\n\nGo to Settings → Notifications to customize your preferences.",
+      suggestions: ["Open settings", "Notification preferences", "Alert frequency"]
+    },
+    "Eco tips": {
+      answer: "Help the environment with these eco tips! 🌱\n\n♻️ Reduce single-use plastics\n🎒 Use reusable bags\n💧 Compost organic waste\n📦 Recycle properly\n🔋 Dispose e-waste safely\n🌳 Reduce, reuse, recycle!\n\nSmall actions make a big difference!",
+      suggestions: ["More eco tips", "Composting guide", "Recycling benefits"]
+    },
+    "Contact support": {
+      answer: "Need help? We're here! 💚\n\nContact us through:\n📧 Email: support@gwaste.com\n📱 Hotline: (123) 456-7890\n💬 In-app chat (here!)\n🏢 Office: Visit our local branch\n\nResponse time: Usually within 24 hours.",
+      suggestions: ["Report an Issue", "FAQs", "Office locations"]
+    }
+  };
+
   const handleSuggestionClick = (suggestion) => {
-    sendMessage(suggestion);
+    // Check if we have a smart response for this suggestion
+    const smartResponse = smartResponses[suggestion];
+    
+    if (smartResponse) {
+      // Instant answer - no API call needed!
+      const userMessage = { id: generateId(), text: suggestion, user: true };
+      const assistantId = generateId();
+      const botMessage = { 
+        id: assistantId, 
+        text: smartResponse.answer, 
+        user: false, 
+        suggestions: smartResponse.suggestions || [] 
+      };
+      
+      setMessages((prev) => [...prev, userMessage, botMessage]);
+      
+      // Show success notification
+      showMessage({
+        message: "Quick Answer! ⚡",
+        type: "success",
+        duration: 1500,
+      });
+    } else {
+      // Fall back to API call for other suggestions
+      sendMessage(suggestion);
+    }
   };
 
   const isIssueRelated = (text) => {

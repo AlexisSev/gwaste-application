@@ -77,7 +77,15 @@ export default function ResidentTabLayout() {
           href: null, // This hides the tab from the tab bar
         }}
       />
+
+      <Tabs.Screen
+        name="GwasteChatbot"
+        options={{
+          href: null, // This hides the tab from the tab bar
+        }}
+      />
     </Tabs>
+    
     </>
   );
 }

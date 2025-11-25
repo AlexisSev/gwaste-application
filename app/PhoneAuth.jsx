@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 import { Feather } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { useState, useEffect } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -10,99 +10,158 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View
 } from "react-native";
+import { vw } from "../utils/responsive";
 import { ThemedText } from "../components/ThemedText";
 import InputField from "../components/ui/InputField";
 import PrimaryButton from "../components/ui/PrimaryButton";
+import * as Crypto from "expo-crypto";
+import { sendOtpSMS, generateOTP, verifyOtpCode } from "../services/otpService.js";
 import { supabase } from "../services/supabaseClient";
-import { vw } from "../utils/responsive";
 
 export const options = {
   headerShown: false,
   tabBarStyle: { display: "none" },
 };
 
-export default function PhoneAuthScreen() {
+export default function PhoneAuth() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { first_name, last_name, resident_address, purok, password } = params;
+
   const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [timer, setTimer] = useState(0);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
-  const normalizePhone = (t) => {
-    if (!t) return "";
-    const s = String(t).replace(/[\s\-()]/g, "");
-    if (/^09\d{9}$/.test(s)) return `+63${s.slice(1)}`;
-    if (/^\+63\d{10}$/.test(s)) return s;
-    if (/^63\d{10}$/.test(s)) return `+${s}`;
-    if (/^\+\d{10,15}$/.test(s)) return s;
-    return s;
+  // Countdown timer
+  useEffect(() => {
+    if (timer === 0) return;
+    const id = setInterval(() => setTimer((prev) => prev - 1), 1000);
+    return () => clearInterval(id);
+  }, [timer]);
+
+  // Send OTP
+  const sendOtp = async () => {
+    if (!phone.trim()) return Alert.alert("Error", "Enter phone number first");
+    
+    // Validate phone number format
+    const phoneRegex = /^(\+63|63|0)?9\d{9}$/;
+    if (!phoneRegex.test(phone.replace(/\s/g, ''))) {
+      return Alert.alert(
+        "Invalid Phone Number",
+        "Please enter a valid Philippine mobile number (e.g., +639171234567)"
+      );
+    }
+
+    // Confirm before sending OTP
+    Alert.alert(
+      "Confirm Phone Number",
+      `We will send a verification code to:\n\n${phone}\n\nIs this correct?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Send OTP",
+          onPress: async () => {
+            setSending(true);
+
+            try {
+              // Check if phone number is already registered
+              const { data: existingUser } = await supabase
+                .from("residents")
+                .select("phone_number")
+                .eq("phone_number", phone)
+                .single();
+
+              if (existingUser) {
+                Alert.alert(
+                  "Phone Number Already Registered",
+                  "This phone number is already registered. Please log in instead."
+                );
+                setSending(false);
+                return;
+              }
+
+              const otpCode = generateOTP();
+              const ok = await sendOtpSMS(phone, otpCode);
+              if (ok) {
+                setTimer(120); // 2 minutes
+                Alert.alert("OTP Sent", "Please check your phone for the verification code.");
+              }
+            } catch (err) {
+              Alert.alert("Error", err.message || "Failed to send OTP");
+            } finally {
+              setSending(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
-  const sendOTP = async () => {
-    const formatted = normalizePhone(phone.trim());
-    if (!/^\+\d{10,15}$/.test(formatted)) {
-      Alert.alert("Invalid phone", "Use format +63XXXXXXXXXX or 09XXXXXXXXX");
-      return;
-    }
-    setSending(true);
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: formatted,
-        options: { channel: "sms" },
-      });
-      if (error) throw error;
-      setOtpSent(true);
-      Alert.alert("Success", "OTP sent to your phone.");
-    } catch (err) {
-      Alert.alert("Error", err?.message || "Failed to send OTP");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const verifyOTP = async () => {
-    const formatted = normalizePhone(phone.trim());
-    if (!code.trim()) {
-      Alert.alert("Missing code", "Please enter the OTP code.");
-      return;
-    }
+  // Verify OTP & insert into residents table
+  const verifyOtp = async () => {
+    if (!otp.trim()) return Alert.alert("Error", "Please enter OTP");
     setVerifying(true);
-    try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: formatted,
-        token: code.trim(),
-        type: "sms",
-      });
-      if (error) throw error;
-      // On success, create resident with params and phone
-      const payload = {
-        first_name: String(params.first_name || "").trim(),
-        last_name: String(params.last_name || "").trim(),
-        resident_address: String(params.resident_address || "").trim(),
-        purok: String(params.purok || "").trim(),
-        phone_number: formatted,
-        password: String(params.password || "").trim(),
-      };
 
-      const missing = Object.entries(payload)
-        .filter(([_, v]) => !String(v))
-        .map(([k]) => k);
-      if (missing.length) {
-        Alert.alert("Missing data", "Some signup details are missing. Please go back and try again.");
+    try {
+      const { success, message } = await verifyOtpCode(phone, otp);
+      if (!success) return Alert.alert("OTP Error", message);
+
+      // Check if phone number already exists
+      const { data: existingUser, error: checkError } = await supabase
+        .from("residents")
+        .select("phone_number")
+        .eq("phone_number", phone)
+        .single();
+
+      if (existingUser) {
+        Alert.alert(
+          "Phone Number Already Registered",
+          "This phone number is already registered. Please use a different number or log in."
+        );
         return;
       }
 
-      const { error: insertError } = await supabase.from("residents").insert(payload);
-      if (insertError) throw insertError;
+      const hashedPassword = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        password
+      );
 
-      Alert.alert("Verified", "Phone verified and account created. Please log in.");
+      const { error: insertError } = await supabase.from("residents").insert([
+        {
+          first_name,
+          last_name,
+          resident_address,
+          purok,
+          phone_number: phone,
+          password: hashedPassword,
+        },
+      ]);
+
+      if (insertError) {
+        // Handle duplicate key error specifically
+        if (insertError.code === "23505") {
+          Alert.alert(
+            "Phone Number Already Exists",
+            "This phone number is already registered. Please log in instead."
+          );
+        } else {
+          throw insertError;
+        }
+        return;
+      }
+
+      Alert.alert("Success", "Account Verified & Created!");
       router.replace("/login");
     } catch (err) {
-      Alert.alert("Verification failed", err?.message || "Invalid or expired code");
+      Alert.alert("Error", err.message || "Failed to create account");
     } finally {
       setVerifying(false);
     }
@@ -110,6 +169,7 @@ export default function PhoneAuthScreen() {
 
   return (
     <KeyboardAvoidingView
+      style={styles.flex}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
     >
@@ -126,38 +186,69 @@ export default function PhoneAuthScreen() {
 
         <View style={styles.form}>
           <ThemedText type="title" style={styles.title}>
-            Verify Phone
+            Verify Your Phone
           </ThemedText>
 
-          {!otpSent ? (
-            <>
-              <InputField
-                icon={<Feather name="phone" size={20} color="#8BC500" />}
-                placeholder="(+63) 9XXXXXXXXX"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-                style={styles.input}
-              />
-              <PrimaryButton onPress={sendOTP} style={styles.button}>
-                <Text style={styles.buttonText}>{sending ? "Sending..." : "Send OTP"}</Text>
-              </PrimaryButton>
-            </>
+          <Text style={styles.subtitle}>
+            Enter your phone number to receive a verification code
+          </Text>
+
+          <InputField
+            icon={<Feather name="phone" size={20} color="#8BC500" />}
+            placeholder="+63XXXXXXXXXX"
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.input}
+          />
+
+          <PrimaryButton
+            onPress={sendOtp}
+            disabled={sending || timer > 0}
+            style={styles.button}
+          >
+            <Text style={styles.buttonText}>
+              {sending ? "Sending..." : "Send OTP"}
+            </Text>
+          </PrimaryButton>
+
+          <InputField
+            icon={<Feather name="shield" size={20} color="#8BC500" />}
+            placeholder="Enter OTP"
+            value={otp}
+            onChangeText={setOtp}
+            keyboardType="number-pad"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.input}
+          />
+
+          {timer > 0 ? (
+            <Text style={styles.timer}>Code expires in {timer}s</Text>
           ) : (
-            <>
-              <InputField
-                icon={<Feather name="key" size={20} color="#8BC500" />}
-                placeholder="Enter OTP"
-                value={code}
-                onChangeText={setCode}
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-              <PrimaryButton onPress={verifyOTP} style={styles.button}>
-                <Text style={styles.buttonText}>{verifying ? "Verifying..." : "Verify OTP"}</Text>
-              </PrimaryButton>
-            </>
+            <TouchableOpacity onPress={sendOtp} disabled={sending}>
+              <Text style={styles.resend}>Resend OTP</Text>
+            </TouchableOpacity>
           )}
+
+          <PrimaryButton
+            onPress={verifyOtp}
+            disabled={verifying}
+            style={styles.button}
+          >
+            <Text style={styles.buttonText}>
+              {verifying ? "Verifying..." : "Verify & Create Account"}
+            </Text>
+          </PrimaryButton>
+
+          <Text style={styles.link}>
+            Want to go back?{" "}
+            <Text style={styles.linkText} onPress={() => router.back()}>
+              Return to sign up
+            </Text>
+          </Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -178,7 +269,7 @@ const styles = StyleSheet.create({
   logo: {
     width: Math.min(vw(55), 240),
     height: undefined,
-    aspectRatio: 200 / 90,
+    aspectRatio: 200/90,
     marginBottom: 20,
   },
   form: {
@@ -198,6 +289,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textAlign: "center",
   },
+  subtitle: {
+    marginBottom: 24,
+    color: "#888",
+    textAlign: "center",
+    fontSize: 14,
+  },
   input: {
     width: "100%",
     marginVertical: 8,
@@ -212,5 +309,28 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     color: "#fff",
+  },
+  timer: {
+    color: "#888",
+    marginTop: 8,
+    marginBottom: 8,
+    textAlign: "center",
+    fontSize: 14,
+  },
+  resend: {
+    color: "#87CEEB",
+    marginTop: 12,
+    marginBottom: 8,
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  link: {
+    color: "#666",
+    marginTop: 8,
+    textAlign: "center",
+  },
+  linkText: {
+    color: "#87CEEB",
   },
 });

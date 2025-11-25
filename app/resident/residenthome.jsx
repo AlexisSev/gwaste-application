@@ -26,6 +26,7 @@ export default function ResidentIndex() {
   const [userLocation, setUserLocation] = useState(null);
   const [nearestDistanceKm, setNearestDistanceKm] = useState(null);
   const [distanceLoading, setDistanceLoading] = useState(true);
+  const [profileImage, setProfileImage] = useState(null);
 
   const formatTime = (timeString) => {
     if (!timeString) return '';
@@ -392,6 +393,22 @@ export default function ResidentIndex() {
             purok: resident.purok || null,
             address: resident.resident_address || resident.address || null,
           });
+          
+          // Load profile image if available
+          if (resident.profile_image_base64) {
+            setProfileImage(resident.profile_image_base64);
+          } else if (resident.id) {
+            // Fetch from database if not in context
+            const { data: residentProfile, error: profileError } = await supabase
+              .from('residents')
+              .select('profile_image_base64')
+              .eq('id', resident.id)
+              .single();
+            
+            if (!profileError && residentProfile?.profile_image_base64) {
+              setProfileImage(residentProfile.profile_image_base64);
+            }
+          }
         } else if (params.firstName && params.purok && params.address) {
           // Fallback to params (legacy)
           setResidentData({
@@ -487,10 +504,13 @@ export default function ResidentIndex() {
           style={styles.profileContainer}
           onPress={() => setIsDropdownVisible(!isDropdownVisible)}
         >
-          <Image 
-            source={require('../../assets/images/icon.png')} 
-            style={styles.profilePic}
-          />
+          <View style={styles.profileCircle}>
+            <Image 
+              source={profileImage ? { uri: profileImage } : require('../../assets/images/icon.png')} 
+              style={styles.profilePic}
+            />
+            <View style={styles.onlineIndicator} />
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -675,7 +695,7 @@ export default function ResidentIndex() {
       {/* Floating Android chatbot icon */}
       <TouchableOpacity
         style={styles.chatbotFab}
-        onPress={() => router.push('/resident/chatbot')}
+        onPress={() => router.push('/resident/GwasteChatbot')}
         accessibilityRole="button"
         accessibilityLabel="Open chatbot"
       >
@@ -710,10 +730,26 @@ const styles = StyleSheet.create({
   profileContainer: {
     position: 'relative'
   },
+  profileCircle: {
+    position: 'relative',
+    width: 40,
+    height: 40,
+  },
   profilePic: {
     width: 40,
     height: 40,
     borderRadius: 20,
+  },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#8BC500',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   scrollView: {
     flex: 1,

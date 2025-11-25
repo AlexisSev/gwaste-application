@@ -79,9 +79,34 @@ export const CollectorAuthProvider = ({ children }) => {
     }
   };
 
+  const refreshCollector = async () => {
+    try {
+      if (!collector?.id) return;
+      
+      const { data, error } = await supabase
+        .from('collectors')
+        .select('*')
+        .eq('id', collector.id)
+        .single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        const enriched = {
+          ...data,
+          collector_id: data.collector_id || data.id || null,
+        };
+        await AsyncStorage.setItem('collectors', JSON.stringify(enriched));
+        setCollector(enriched);
+      }
+    } catch (error) {
+      console.error('Error refreshing collector:', error);
+    }
+  };
+
   const isAuthenticated = () => collector !== null;
 
-  const value = { collector, loading, login, logout, isAuthenticated };
+  const value = { collector, loading, login, logout, refreshCollector, isAuthenticated };
 
   return (
     <CollectorAuthContext.Provider value={value}>

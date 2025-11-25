@@ -4,6 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -43,23 +44,32 @@ const ReportIssue = ({ navigation }) => {
       return;
     }
 
+    if (images.length >= 1) {
+      showMessage({
+        message: "Image Limit",
+        description: "Maximum 1 image allowed",
+        type: "warning",
+      });
+      return;
+    }
+
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.7,
+      quality: 0.6,
+      base64: true,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      if (images.length >= 3) {
-        showMessage({
-          message: "Image Limit",
-          description: "Maximum 3 images allowed",
-          type: "warning",
-        });
-        return;
-      }
-      setImages([...images, result.assets[0].uri]);
+      const asset = result.assets[0];
+      const base64Image = `data:image/jpeg;base64,${asset.base64}`;
+      setImages([...images, base64Image]);
+      
+      showMessage({
+        message: "Image Added",
+        description: "Image selected successfully",
+        type: "success",
+      });
     }
   };
 
@@ -80,76 +90,55 @@ const ReportIssue = ({ navigation }) => {
     setLoading(true);
 
     try {
-      let imageUrls = [];
-
-      // Upload images if any
-      if (images.length > 0) {
-        try {
-          for (let i = 0; i < images.length; i++) {
-            const imageUri = images[i];
-            const fileName = `${resident?.id}-${Date.now()}-${i}.jpg`;
-            
-            // Read image file as base64
-            const response = await fetch(imageUri);
-            const arrayBuffer = await response.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-
-            const { error: uploadError } = await supabase.storage
-              .from("issue_reports")
-              .upload(`${resident?.id}/${fileName}`, uint8Array, {
-                contentType: "image/jpeg",
-              });
-
-            if (uploadError) {
-              console.warn("Image upload skipped:", uploadError);
-              continue;
-            }
-            
-            const { data: { publicUrl } } = supabase.storage
-              .from("issue_reports")
-              .getPublicUrl(`${resident?.id}/${fileName}`);
-            
-            imageUrls.push(publicUrl);
-          }
-        } catch (imgErr) {
-          console.warn("Image upload error, continuing without images:", imgErr);
-        }
-      }
+      // Store images as base64 strings in a JSON array
+      const imageData = images.length > 0 ? images : null;
 
       const { error } = await supabase.from("reports").insert([
         {
           resident_id: resident?.id,
           subject: subject.trim(),
           description: description.trim(),
-          issue_type: issueType,
+          report_type: issueType,
           status: "pending",
-          image_urls: imageUrls.length > 0 ? imageUrls : null,
+          images_base64: imageData, // Store base64 images directly
+          created_at: new Date().toISOString(),
         },
       ]);
 
       if (error) throw error;
 
-      showMessage({
-        message: "Report Submitted",
-        description: "Your issue has been reported successfully. We'll review it soon.",
-        type: "success",
-      });
-      // Clear form
-      setSubject("");
-      setDescription("");
-      setIssueType("general");
-      setImages([]);
+      // Show success alert
+      Alert.alert(
+        "Report Submitted Successfully! ✓",
+        "Your issue has been reported and will be reviewed by our team within 24 hours. You can track the status of your report in your profile.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Clear form after alert
+              setSubject("");
+              setDescription("");
+              setIssueType("general");
+              setImages([]);
+              navigation?.goBack();
+            }
+          }
+        ]
+      );
 
-      // Navigate back after 2 seconds
-      setTimeout(() => {
-        navigation?.goBack();
-      }, 2000);
+      showMessage({
+        message: "Report Submitted! ✓",
+        description: "Your issue has been reported successfully.",
+        type: "success",
+        duration: 3000,
+      });
     } catch (err) {
       console.error("Report submission error:", err);
       showMessage({
         message: "Submission Failed",
-        description: err?.message || "Failed to submit your report",
+        description: err?.message || "Failed to submit your report. Please try again.",
         type: "danger",
+        duration: 4000,
       });
     } finally {
       setLoading(false);
@@ -239,17 +228,30 @@ const ReportIssue = ({ navigation }) => {
 
         {/* Image Upload Section */}
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Add Image</Text>
+          <Text style={styles.label}>Add Images (Optional)</Text>
           <Text style={styles.helpText}>
-            Upload photos to support your issue report
+            Upload 1 photo to support your issue report
           </Text>
           <TouchableOpacity
-            style={[styles.imagePickButton, loading && styles.disabledButton]}
+            style={[
+              styles.imagePickButton,
+              loading && styles.disabledButton,
+              images.length >= 1 && styles.maxImagesButton
+            ]}
             onPress={pickImage}
-            disabled={loading || images.length >= 3}
+            disabled={loading || images.length >= 1}
           >
-            <Ionicons name="image-outline" size={20} color="#8BC500" />
-            <Text style={styles.imagePickButtonText}>Add Image</Text>
+            <Ionicons
+              name="camera-outline"
+              size={24}
+              color={images.length >= 1 ? "#A1A5A7" : "#8BC500"}
+            />
+            <Text style={[
+              styles.imagePickButtonText,
+              images.length >= 1 && styles.maxImagesText
+            ]}>
+              {images.length >= 1 ? "Image Added" : "Add Image"}
+            </Text>
           </TouchableOpacity>
 
           {/* Display Selected Images */}
@@ -257,12 +259,17 @@ const ReportIssue = ({ navigation }) => {
             <View style={styles.imagesContainer}>
               {images.map((imageUri, index) => (
                 <View key={index} style={styles.imageWrapper}>
-                  <Image source={{ uri: imageUri }} style={styles.imagePreview} />
+                  <Image 
+                    source={{ uri: imageUri }} 
+                    style={styles.imagePreview}
+                    resizeMode="cover"
+                  />
                   <TouchableOpacity
                     style={styles.removeImageButton}
                     onPress={() => removeImage(index)}
+                    disabled={loading}
                   >
-                    <Ionicons name="close-circle" size={24} color="#FF6B6B" />
+                    <Ionicons name="close-circle" size={28} color="#FF4444" />
                   </TouchableOpacity>
                 </View>
               ))}
@@ -381,10 +388,17 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.5,
   },
+  maxImagesButton: {
+    borderColor: "#DFE6D8",
+    backgroundColor: "#F5F5F5",
+  },
   imagePickButtonText: {
     fontSize: 14,
     color: "#8BC500",
     fontWeight: "600",
+  },
+  maxImagesText: {
+    color: "#A1A5A7",
   },
   imagesContainer: {
     flexDirection: "row",
@@ -396,16 +410,27 @@ const styles = StyleSheet.create({
     position: "relative",
     width: "30%",
     aspectRatio: 1,
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "#E8E8E8",
   },
   imagePreview: {
     width: "100%",
     height: "100%",
-    borderRadius: 10,
+    borderRadius: 8,
   },
   removeImageButton: {
     position: "absolute",
-    top: -8,
-    right: -8,
+    top: -10,
+    right: -10,
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
   },
   typeContainer: {
     marginBottom: 8,

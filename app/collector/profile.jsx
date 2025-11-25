@@ -4,25 +4,25 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Image,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useResidentAuth } from '../../hooks/useResidentAuth';
+import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
 import { supabase } from '../../services/supabaseClient';
 
-export default function ProfileScreen() {
+export default function CollectorProfileScreen() {
   const router = useRouter();
-  const { resident, logout, refreshResident, loading: authLoading } = useResidentAuth();
-  const [residentData, setResidentData] = useState(null);
+  const { collector, logout, refreshCollector, loading: authLoading } = useCollectorAuth();
+  const [collectorData, setCollectorData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [profileImage, setProfileImage] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -32,54 +32,87 @@ export default function ProfileScreen() {
   const [editForm, setEditForm] = useState({
     firstName: '',
     lastName: '',
-    purok: '',
-    address: '',
-    phoneNumber: '',
+    driver: '',
+    contact: '',
   });
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (resident?.id) {
-      if (resident.first_name) {
+    if (collector?.id) {
+      if (collector.first_name) {
+        // Parse crew data if it's a string (JSON)
+        let crewData = [];
+        if (collector.crew) {
+          if (typeof collector.crew === 'string') {
+            try {
+              crewData = JSON.parse(collector.crew);
+            } catch (e) {
+              console.error('Error parsing crew JSON:', e);
+              crewData = [];
+            }
+          } else if (Array.isArray(collector.crew)) {
+            crewData = collector.crew;
+          }
+        }
+        
         // Map Supabase fields to the UI's expected shape
-        setResidentData({
-          firstName: resident.first_name,
-          lastName: resident.last_name,
-          purok: resident.purok,
-          address: resident.resident_address,
-          phoneNumber: resident.phone_number,
-          createdAt: resident.created_at || null,
+        setCollectorData({
+          firstName: collector.first_name,
+          lastName: collector.last_name,
+          driver: collector.driver || collector.collector_name,
+          vehicleType: collector.vehicle_type,
+          phoneNumber: collector.phone_number,
+          collectorId: collector.collector_id,
+          createdAt: collector.created_at || null,
+          crew: crewData,
         });
         // Load profile image if exists
-        if (resident.profile_image_base64) {
-          setProfileImage(resident.profile_image_base64);
+        if (collector.profile_image_base64) {
+          setProfileImage(collector.profile_image_base64);
         }
         setLoading(false);
       } else {
-        loadResidentData();
+        loadCollectorData();
       }
     } else {
       setLoading(false);
     }
-  }, [resident?.id]);
+  }, [collector?.id]);
 
-  const loadResidentData = async () => {
+  const loadCollectorData = async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('residents')
+        .from('collectors')
         .select('*')
-        .eq('id', resident.id)
+        .eq('id', collector.id)
         .single();
       if (error) throw error;
       if (data) {
-        setResidentData({
+        // Parse crew data if it's a string (JSON)
+        let crewData = [];
+        if (data.crew) {
+          if (typeof data.crew === 'string') {
+            try {
+              crewData = JSON.parse(data.crew);
+            } catch (e) {
+              console.error('Error parsing crew JSON:', e);
+              crewData = [];
+            }
+          } else if (Array.isArray(data.crew)) {
+            crewData = data.crew;
+          }
+        }
+        
+        setCollectorData({
           firstName: data.first_name,
           lastName: data.last_name,
-          purok: data.purok,
-          address: data.resident_address,
+          driver: data.driver || data.collector_name,
+          vehicleType: data.vehicle_type,
           phoneNumber: data.phone_number,
+          collectorId: data.collector_id,
           createdAt: data.created_at || null,
+          crew: crewData,
         });
         // Load profile image if exists
         if (data.profile_image_base64) {
@@ -87,7 +120,7 @@ export default function ProfileScreen() {
         }
       }
     } catch (error) {
-      console.error('Error loading resident data:', error);
+      console.error('Error loading collector data:', error);
       Alert.alert('Error', 'Failed to load profile data');
     } finally {
       setLoading(false);
@@ -96,12 +129,14 @@ export default function ProfileScreen() {
 
   const pickImage = async () => {
     try {
-      const { status} = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      // Request permission
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to change your profile picture.');
         return;
       }
 
+      // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
@@ -122,30 +157,37 @@ export default function ProfileScreen() {
     try {
       setUploadingImage(true);
 
+      // Convert image to base64
       const response = await fetch(uri);
       const blob = await response.blob();
       
+      // Convert blob to base64
       const reader = new FileReader();
       const base64Promise = new Promise((resolve, reject) => {
-        reader.onloadend = () => resolve(reader.result);
+        reader.onloadend = () => {
+          const base64String = reader.result;
+          resolve(base64String);
+        };
         reader.onerror = reject;
       });
       
       reader.readAsDataURL(blob);
       const base64Image = await base64Promise;
 
+      // Update collector profile with base64 image
       const { error: updateError } = await supabase
-        .from('residents')
+        .from('collectors')
         .update({ profile_image_base64: base64Image })
-        .eq('id', resident.id)
+        .eq('id', collector.id)
         .select();
 
       if (updateError) throw updateError;
 
       setProfileImage(base64Image);
       
-      if (typeof refreshResident === 'function') {
-        await refreshResident();
+      // Refresh the collector data in AsyncStorage and context
+      if (typeof refreshCollector === 'function') {
+        await refreshCollector();
       }
       
       Alert.alert('Success', 'Profile picture updated successfully!');
@@ -183,12 +225,12 @@ export default function ProfileScreen() {
   };
 
   const handleEditProfile = () => {
+    // Populate edit form with current data from both collector and collectorData
     setEditForm({
-      firstName: residentData?.firstName || resident?.firstName || resident?.first_name || '',
-      lastName: residentData?.lastName || resident?.lastName || resident?.last_name || '',
-      purok: residentData?.purok || resident?.purok || '',
-      address: residentData?.address || resident?.resident_address || '',
-      phoneNumber: residentData?.phoneNumber || resident?.phone_number || '',
+      firstName: collectorData?.firstName || collector?.firstName || collector?.first_name || '',
+      lastName: collectorData?.lastName || collector?.lastName || collector?.last_name || '',
+      driver: collectorData?.driver || collector?.driver || '',
+      contact: collectorData?.phoneNumber || collector?.contact || collector?.phone_number || '',
     });
     setIsEditModalVisible(true);
   };
@@ -197,36 +239,43 @@ export default function ProfileScreen() {
     try {
       setIsSaving(true);
 
+      // Validate required fields
       if (!editForm.firstName?.trim()) {
         Alert.alert('Validation Error', 'First name is required');
         return;
       }
 
+      if (!editForm.driver?.trim()) {
+        Alert.alert('Validation Error', 'Driver name is required');
+        return;
+      }
+
+      // Update database
       const { error } = await supabase
-        .from('residents')
+        .from('collectors')
         .update({
-          first_name: editForm.firstName.trim(),
-          last_name: editForm.lastName?.trim() || null,
-          purok: editForm.purok?.trim() || null,
-          resident_address: editForm.address?.trim() || null,
-          phone_number: editForm.phoneNumber?.trim() || null,
+          firstName: editForm.firstName.trim(),
+          lastName: editForm.lastName?.trim() || null,
+          driver: editForm.driver.trim(),
+          contact: editForm.contact?.trim() || null,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', resident.id);
+        .eq('id', collector.id);
 
       if (error) throw error;
 
-      setResidentData({
-        ...residentData,
+      // Update local state
+      setCollectorData({
+        ...collectorData,
         firstName: editForm.firstName.trim(),
         lastName: editForm.lastName?.trim() || '',
-        purok: editForm.purok?.trim() || '',
-        address: editForm.address?.trim() || '',
-        phoneNumber: editForm.phoneNumber?.trim() || '',
+        driver: editForm.driver.trim(),
+        phoneNumber: editForm.contact?.trim() || '',
       });
 
-      if (typeof refreshResident === 'function') {
-        await refreshResident();
+      // Refresh collector context
+      if (typeof refreshCollector === 'function') {
+        await refreshCollector();
       }
 
       setIsEditModalVisible(false);
@@ -244,9 +293,8 @@ export default function ProfileScreen() {
     setEditForm({
       firstName: '',
       lastName: '',
-      purok: '',
-      address: '',
-      phoneNumber: '',
+      driver: '',
+      contact: '',
     });
   };
 
@@ -254,14 +302,14 @@ export default function ProfileScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#8BC500" />
+          <ActivityIndicator size="large" color="#4CAF50" />
           <Text style={styles.loadingText}>Loading profile...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  if (!resident) {
+  if (!collector) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -292,7 +340,7 @@ export default function ProfileScreen() {
           style={styles.editButton}
           onPress={handleEditProfile}
         >
-          <Feather name="edit-3" size={20} color="#8BC500" />
+          <Feather name="edit-3" size={20} color="#4CAF50" />
         </TouchableOpacity>
       </View>
 
@@ -306,7 +354,7 @@ export default function ProfileScreen() {
             />
             {uploadingImage && (
               <View style={styles.uploadingOverlay}>
-                <ActivityIndicator size="large" color="#8BC500" />
+                <ActivityIndicator size="large" color="#4CAF50" />
               </View>
             )}
             <TouchableOpacity 
@@ -317,12 +365,12 @@ export default function ProfileScreen() {
               <Feather name="camera" size={16} color="#fff" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.profileName}>
-            {residentData?.firstName} {residentData?.lastName}
+          <Text style={styles.driverName}>
+            {collectorData?.driver || 'Not assigned'}
           </Text>
           <View style={styles.roleBadge}>
-            <Feather name="home" size={14} color="#fff" />
-            <Text style={styles.roleBadgeText}>Resident</Text>
+            <Feather name="truck" size={14} color="#fff" />
+            <Text style={styles.roleBadgeText}>Garbage Collector</Text>
           </View>
         </View>
 
@@ -332,51 +380,74 @@ export default function ProfileScreen() {
           
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
-              <Feather name="user" size={20} color="#8BC500" />
+              <Feather name="truck" size={20} color="#4CAF50" />
               <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Full Name</Text>
+                <Text style={styles.infoLabel}>Driver Name</Text>
                 <Text style={styles.infoValue}>
-                  {residentData?.firstName} {residentData?.lastName}
+                  {collectorData?.driver || 'Not specified'}
                 </Text>
               </View>
             </View>
 
-            <View style={styles.infoRow}>
-              <Feather name="phone" size={20} color="#8BC500" />
+            <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+              <Feather name="phone" size={20} color="#4CAF50" />
               <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Phone Number</Text>
+                <Text style={styles.infoLabel}>Contact Number</Text>
                 <Text style={styles.infoValue}>
-                  {residentData?.phoneNumber || 'Not provided'}
+                  {collectorData?.phoneNumber || collector?.contact || 'Not specified'}
                 </Text>
               </View>
             </View>
           </View>
         </View>
 
-        {/* Address Information */}
+        {/* Work Information */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Address Information</Text>
+          <Text style={styles.sectionTitle}>Work Information</Text>
           
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
-              <Feather name="map-pin" size={20} color="#8BC500" />
+              <Feather name="users" size={20} color="#4CAF50" />
               <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Purok</Text>
-                <Text style={styles.infoValue}>
-                  {residentData?.purok || 'Not specified'}
-                </Text>
+                <Text style={styles.infoLabel}>Crew Members</Text>
+                {collectorData?.crew && Array.isArray(collectorData.crew) && collectorData.crew.length > 0 ? (
+                  <View style={styles.crewContainer}>
+                    {collectorData.crew.map((member, index) => {
+                      let displayName = 'Crew Member';
+                      
+                      if (typeof member === 'string') {
+                        displayName = member;
+                      } else if (member.firstName || member.lastName) {
+                        displayName = `${member.firstName || ''} ${member.lastName || ''}`.trim();
+                      } else if (member.name) {
+                        displayName = member.name;
+                      }
+                      
+                      return (
+                        <View key={index} style={styles.crewMember}>
+                          <Feather name="user" size={14} color="#4CAF50" />
+                          <Text style={styles.crewMemberText}>
+                            {displayName}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={styles.infoValue}>No crew assigned</Text>
+                )}
               </View>
             </View>
 
-            <View style={styles.infoRow}>
-              <Feather name="home" size={20} color="#8BC500" />
+            {/* <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+              <Feather name="briefcase" size={20} color="#4CAF50" />
               <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Address</Text>
+                <Text style={styles.infoLabel}>Vehicle Type</Text>
                 <Text style={styles.infoValue}>
-                  {residentData?.address || 'Not provided'}
+                  {collectorData?.vehicleType || 'Not specified'}
                 </Text>
               </View>
-            </View>
+            </View> */}
           </View>
         </View>
 
@@ -386,29 +457,30 @@ export default function ProfileScreen() {
           
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
-              <Feather name="calendar" size={20} color="#8BC500" />
+              <Feather name="calendar" size={20} color="#4CAF50" />
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Member Since</Text>
                 <Text style={styles.infoValue}>
-                  {residentData?.createdAt
-                    ? new Date(residentData.createdAt).toLocaleDateString()
+                  {collectorData?.createdAt
+                    ? new Date(collectorData.createdAt).toLocaleDateString()
                     : 'Unknown'
                   }
                 </Text>
               </View>
             </View>
+
           </View>
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actionSection}>
           <TouchableOpacity style={styles.actionButton} onPress={handleEditProfile}>
-            <Feather name="edit-3" size={20} color="#8BC500" />
+            <Feather name="edit-3" size={20} color="#4CAF50" />
             <Text style={styles.actionButtonText}>Edit Profile</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/resident/settings')}>
-            <Feather name="settings" size={20} color="#8BC500" />
+          <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/collector/settings')}>
+            <Feather name="settings" size={20} color="#4CAF50" />
             <Text style={styles.actionButtonText}>Settings</Text>
           </TouchableOpacity>
 
@@ -445,7 +517,7 @@ export default function ProfileScreen() {
                   />
                   {uploadingImage && (
                     <View style={styles.modalUploadingOverlay}>
-                      <ActivityIndicator size="large" color="#8BC500" />
+                      <ActivityIndicator size="large" color="#4CAF50" />
                     </View>
                   )}
                   <TouchableOpacity 
@@ -483,40 +555,26 @@ export default function ProfileScreen() {
                 />
               </View>
 
-              {/* Purok */}
+              {/* Driver Name */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Purok</Text>
+                <Text style={styles.inputLabel}>Driver Name *</Text>
                 <TextInput
                   style={styles.input}
-                  value={editForm.purok}
-                  onChangeText={(text) => setEditForm({ ...editForm, purok: text })}
-                  placeholder="Enter purok"
+                  value={editForm.driver}
+                  onChangeText={(text) => setEditForm({ ...editForm, driver: text })}
+                  placeholder="Enter driver name"
                   placeholderTextColor="#999"
                 />
               </View>
 
-              {/* Address */}
+              {/* Contact Number */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Address</Text>
+                <Text style={styles.inputLabel}>Contact Number</Text>
                 <TextInput
                   style={styles.input}
-                  value={editForm.address}
-                  onChangeText={(text) => setEditForm({ ...editForm, address: text })}
-                  placeholder="Enter address"
-                  placeholderTextColor="#999"
-                  multiline
-                  numberOfLines={3}
-                />
-              </View>
-
-              {/* Phone Number */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Phone Number</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editForm.phoneNumber}
-                  onChangeText={(text) => setEditForm({ ...editForm, phoneNumber: text })}
-                  placeholder="Enter phone number"
+                  value={editForm.contact}
+                  onChangeText={(text) => setEditForm({ ...editForm, contact: text })}
+                  placeholder="Enter contact number"
                   placeholderTextColor="#999"
                   keyboardType="phone-pad"
                 />
@@ -575,7 +633,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   retryButton: {
-    backgroundColor: '#8BC500',
+    backgroundColor: '#4CAF50',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
@@ -625,7 +683,7 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 50,
     borderWidth: 3,
-    borderColor: '#8BC500',
+    borderColor: '#4CAF50',
   },
   uploadingOverlay: {
     position: 'absolute',
@@ -645,7 +703,7 @@ const styles = StyleSheet.create({
     bottom: 2,
     right: -3,
     alignSelf: 'center',
-    backgroundColor: '#8BC500',
+    backgroundColor: '#4CAF50',
     borderRadius: 15,
     width: 35,
     height: 35,
@@ -654,8 +712,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
   },
-  profileName: {
-    fontSize: 28,
+  driverName: {
+    fontSize: 30,
     fontWeight: '500',
     color: '#333',
     marginBottom: 10,
@@ -663,15 +721,15 @@ const styles = StyleSheet.create({
   roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#8BC500',
-    paddingHorizontal: 12,
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
     gap: 5,
   },
   roleBadgeText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: '500',
   },
   section: {
@@ -719,7 +777,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   statusActive: {
-    color: '#8BC500',
+    color: '#4CAF50',
     fontWeight: '600',
   },
   actionSection: {
@@ -755,6 +813,25 @@ const styles = StyleSheet.create({
   },
   logoutButtonText: {
     color: '#FF4444',
+  },
+  // Crew Styles
+  crewContainer: {
+    marginTop: 8,
+    gap: 8,
+  },
+  crewMember: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f9f0',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    gap: 8,
+  },
+  crewMemberText: {
+    fontSize: 15,
+    color: '#333',
+    fontWeight: '500',
   },
   // Modal Styles
   modalOverlay: {
@@ -802,7 +879,7 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 60,
     borderWidth: 3,
-    borderColor: '#8BC500',
+    borderColor: '#4CAF50',
   },
   modalUploadingOverlay: {
     position: 'absolute',
@@ -821,7 +898,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: '#8BC500',
+    backgroundColor: '#4CAF50',
     borderRadius: 20,
     width: 40,
     height: 40,
@@ -892,7 +969,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   saveButton: {
-    backgroundColor: '#8BC500',
+    backgroundColor: '#4CAF50',
   },
   saveButtonText: {
     color: '#fff',
@@ -900,3 +977,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
