@@ -103,7 +103,7 @@ export const handleGeofenceExit = async (
     const nextCandidate = computeNextUncollected(todaysSchedule, new Set([...collectedAreas, areaName]));
     if (nextCandidate) {
       setNextArea(nextCandidate);
-      await planRouteToArea(nextCandidate.location);
+      await planRouteToArea(nextCandidate.location, nextCandidate.routeNumber);
     }
   } catch (error) {
     console.error('Error planning next route:', error);

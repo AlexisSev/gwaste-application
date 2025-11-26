@@ -1,15 +1,16 @@
 // hooks/useLeafletMap.js
 import { useCallback, useRef, useState } from 'react';
 import {
-    AREA_COORDINATES,
-    DEFAULT_LOCATION,
-    DESTINATION_MARKER,
-    GEOFENCE_RADIUS_METERS,
-    MAP_STYLES,
-    NOMINATIM_CONFIG,
-    OSM_TILE_LAYER,
-    OSRM_ROUTING_URL,
-    TRUCK_MARKER,
+  AREA_COORDINATES,
+  BOGO_CITY_BOUNDS,
+  DEFAULT_LOCATION,
+  DESTINATION_MARKER,
+  GEOFENCE_RADIUS_METERS,
+  MAP_STYLES,
+  NOMINATIM_CONFIG,
+  OSM_TILE_LAYER,
+  OSRM_ROUTING_URL,
+  TRUCK_MARKER,
 } from '../constants/MapConfig';
 
 /**
@@ -43,8 +44,13 @@ export const useLeafletMap = (driverLabel) => {
           <div id="map"></div>
           <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
           <script>
-            // Initialize map with default location
-            window.map = L.map('map', { zoomControl: false, attributionControl: false }).setView([${DEFAULT_LOCATION.latitude}, ${DEFAULT_LOCATION.longitude}], 15);
+            // Initialize map with default location and Bogo City bounds
+            window.map = L.map('map', {
+              zoomControl: false,
+              attributionControl: false,
+              maxBounds: [[${BOGO_CITY_BOUNDS.south}, ${BOGO_CITY_BOUNDS.west}], [${BOGO_CITY_BOUNDS.north}, ${BOGO_CITY_BOUNDS.east}]],
+              maxBoundsViscosity: 1.0 // Prevents dragging outside bounds
+            }).setView([${DEFAULT_LOCATION.latitude}, ${DEFAULT_LOCATION.longitude}], 15);
             L.tileLayer('${OSM_TILE_LAYER.url}', {
               attribution: '${OSM_TILE_LAYER.attribution}'
             }).addTo(window.map);
@@ -169,9 +175,9 @@ export const useLeafletMap = (driverLabel) => {
     // 2) Check cache
     if (geocodeCacheRef.current[key]) return geocodeCacheRef.current[key];
 
-    // 3) Fetch from Nominatim
+    // 3) Fetch from Nominatim with Bogo City bounds
     try {
-      const url = `${NOMINATIM_CONFIG.baseUrl}?format=json&limit=1&q=${encodeURIComponent(query + NOMINATIM_CONFIG.searchSuffix)}`;
+      const url = `${NOMINATIM_CONFIG.baseUrl}?format=json&limit=1&q=${encodeURIComponent(query + NOMINATIM_CONFIG.searchSuffix)}&viewbox=${NOMINATIM_CONFIG.viewbox}&bounded=${NOMINATIM_CONFIG.bounded}`;
       const res = await fetch(url, {
         headers: {
           'Accept': 'application/json',
@@ -182,9 +188,16 @@ export const useLeafletMap = (driverLabel) => {
       if (Array.isArray(data) && data.length > 0) {
         const lat = parseFloat(data[0].lat);
         const lng = parseFloat(data[0].lon);
-        const value = { lat, lng };
-        geocodeCacheRef.current[key] = value;
-        return value;
+
+        // Validate that result is within Bogo City bounds
+        if (lat >= BOGO_CITY_BOUNDS.south && lat <= BOGO_CITY_BOUNDS.north &&
+            lng >= BOGO_CITY_BOUNDS.west && lng <= BOGO_CITY_BOUNDS.east) {
+          const value = { lat, lng };
+          geocodeCacheRef.current[key] = value;
+          return value;
+        } else {
+          console.warn(`Geocoded location for "${query}" is outside Bogo City bounds:`, { lat, lng });
+        }
       }
     } catch (_e) {}
 
@@ -194,10 +207,67 @@ export const useLeafletMap = (driverLabel) => {
   /**
    * Draw a planned route on the map using OSRM
    */
-  const drawPlannedRoute = useCallback(async (startLat, startLng, endLat, endLng, destName = 'Destination') => {
+  const drawPlannedRoute = useCallback(async (startLat, startLng, endLat, endLng, destName = 'Destination', routeNumber = null) => {
     if (!webviewRef.current || !mapInitialized) return;
 
     try {
+      // Validate that both start and end points are within Bogo City bounds
+      const isWithinBounds = (lat, lng) =>
+        lat >= BOGO_CITY_BOUNDS.south && lat <= BOGO_CITY_BOUNDS.north &&
+        lng >= BOGO_CITY_BOUNDS.west && lng <= BOGO_CITY_BOUNDS.east;
+
+      if (!isWithinBounds(startLat, startLng) || !isWithinBounds(endLat, endLng)) {
+        console.warn('Route start or end point is outside Bogo City bounds - using direct line instead');
+        // Fall back to direct line if points are outside bounds
+        const coords = [[startLng, startLat], [endLng, endLng]];
+        const latlngs = coords.map(([lng, lat]) => [lat, lng]);
+        const js = `
+          try {
+            window.routeLatLngs = ${JSON.stringify(latlngs)};
+            if (!window.routeLine) {
+              window.routeLine = L.polyline(window.routeLatLngs, {
+                color: '${MAP_STYLES.routeLine.color}',
+                weight: ${MAP_STYLES.routeLine.weight},
+                opacity: ${MAP_STYLES.routeLine.opacity}
+              }).addTo(window.map);
+            } else {
+              window.routeLine.setLatLngs(window.routeLatLngs);
+            }
+            // Add destination marker and geofence for direct route
+            const __dest = window.routeLatLngs[window.routeLatLngs.length - 1];
+            if (!window.routeDestMarker) {
+              const __pinUrl = '${DESTINATION_MARKER.iconUrl}';
+              window.routeDestMarker = L.marker(__dest, {
+                icon: L.icon({
+                  iconUrl: __pinUrl,
+                  iconRetinaUrl: __pinUrl,
+                  iconSize: [${DESTINATION_MARKER.iconSize[0]}, ${DESTINATION_MARKER.iconSize[1]}],
+                  iconAnchor: [${DESTINATION_MARKER.iconAnchor[0]}, ${DESTINATION_MARKER.iconAnchor[1]}],
+                  popupAnchor: [${DESTINATION_MARKER.popupAnchor[0]}, ${DESTINATION_MARKER.popupAnchor[1]}]
+                })
+              }).addTo(window.map);
+              window.routeDestMarker.bindPopup(${JSON.stringify(' ')} + ${JSON.stringify(destName)});
+            } else {
+              window.routeDestMarker.setLatLng(__dest);
+            }
+            if (!window.routeGeofence) {
+              window.routeGeofence = L.circle(__dest, {
+                radius: ${GEOFENCE_RADIUS_METERS},
+                color: '${MAP_STYLES.geofenceCircle.color}',
+                weight: ${MAP_STYLES.geofenceCircle.weight},
+                opacity: '${MAP_STYLES.geofenceCircle.opacity}',
+                fillColor: '${MAP_STYLES.geofenceCircle.fillColor}',
+                fillOpacity: ${MAP_STYLES.geofenceCircle.fillOpacity}
+              }).addTo(window.map);
+            } else {
+              window.routeGeofence.setLatLng(__dest);
+            }
+          } catch (e) {}
+        `;
+        webviewRef.current.injectJavaScript(js);
+        return;
+      }
+
       const url = `${OSRM_ROUTING_URL}/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
       const res = await fetch(url);
       const data = await res.json();
@@ -209,17 +279,28 @@ export const useLeafletMap = (driverLabel) => {
       }
 
       const latlngs = coords.map(([lng, lat]) => [lat, lng]);
+
+      // Get route-specific color or fallback to default
+      const routeKey = routeNumber ? `Route ${routeNumber}` : null;
+      const routeStyle = routeKey && MAP_STYLES.routeLines[routeKey]
+        ? MAP_STYLES.routeLines[routeKey]
+        : MAP_STYLES.routeLine;
+
       const js = `
         try {
           window.routeLatLngs = ${JSON.stringify(latlngs)};
           if (!window.routeLine) {
-            window.routeLine = L.polyline(window.routeLatLngs, { 
-              color: '${MAP_STYLES.routeLine.color}', 
-              weight: ${MAP_STYLES.routeLine.weight}, 
-              opacity: ${MAP_STYLES.routeLine.opacity} 
+            window.routeLine = L.polyline(window.routeLatLngs, {
+              color: '${routeStyle.color}',
+              weight: ${routeStyle.weight},
+              opacity: ${routeStyle.opacity}
             }).addTo(window.map);
           } else {
             window.routeLine.setLatLngs(window.routeLatLngs);
+            // Update color if route changed
+            if (window.routeLine.options.color !== '${routeStyle.color}') {
+              window.routeLine.setStyle({ color: '${routeStyle.color}' });
+            }
           }
           try { window.routeLine.bringToFront(); } catch (e) {}
           

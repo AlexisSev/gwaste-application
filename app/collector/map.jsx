@@ -47,13 +47,13 @@ export default function CollectorMapScreen() {
   /**
    * Plan route to a specific area
    */
-  const planRouteToArea = async (areaName) => {
+  const planRouteToArea = async (areaName, routeNumber = null) => {
     if (!areaName || !location) return;
     const dest = await geocodeArea(areaName);
     if (!dest) return;
     routeDestRef.current = { name: areaName, lat: dest.lat, lng: dest.lng };
     insideGeofenceRef.current = false;
-    await drawPlannedRoute(location.latitude, location.longitude, dest.lat, dest.lng, areaName);
+    await drawPlannedRoute(location.latitude, location.longitude, dest.lat, dest.lng, areaName, routeNumber);
   };
 
   /**
@@ -190,7 +190,7 @@ export default function CollectorMapScreen() {
       if (!dest) return;
       routeDestRef.current = { name: nextArea.location, lat: dest.lat, lng: dest.lng };
       insideGeofenceRef.current = false;
-      await drawPlannedRoute(location.latitude, location.longitude, dest.lat, dest.lng, nextArea.location);
+      await drawPlannedRoute(location.latitude, location.longitude, dest.lat, dest.lng, nextArea.location, nextArea.routeNumber);
     };
     run();
   }, [nextArea, mapInitialized]);
