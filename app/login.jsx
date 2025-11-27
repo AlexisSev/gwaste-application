@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Lock, User } from 'lucide-react-native';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image as RNImage, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image as RNImage, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '../components/ThemedText';
 import InputField from '../components/ui/InputField';
 import PrimaryButton from '../components/ui/PrimaryButton';
@@ -64,6 +64,14 @@ function LoginScreen() {
     }
   };
 
+  const handleForgotPassword = () => {
+    Alert.alert(
+      'Forgot Password',
+      'Please contact your administrator or support team to reset your password.',
+      [{ text: 'OK' }]
+    );
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.flex}
@@ -94,6 +102,10 @@ function LoginScreen() {
           onIconPress={() => setShowPassword((v) => !v)}
           style={styles.input}
         />
+        
+        <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordContainer}>
+          <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+        </TouchableOpacity>
       
         <PrimaryButton onPress={handleCollectorLogin} style={styles.button} disabled={loading}>
           {loading ? (
@@ -175,6 +187,16 @@ const styles = StyleSheet.create({
   },
   linkText: {
     color: '#87CEEB',
+  },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-end',
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  forgotPasswordText: {
+    color: '#8BC500',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
 

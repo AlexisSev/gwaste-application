@@ -4,7 +4,7 @@ import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Dimensions, FlatList, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { callGemini } from '../services/gemini';
 import { supabase } from '../services/supabaseClient';
 import { ThemedText } from './ThemedText';
@@ -40,6 +40,15 @@ export default function ResidentChatBot() {
   const listRef = useRef(null);
   const fabScale = useRef(new Animated.Value(1)).current;
   const modalOpacity = useRef(new Animated.Value(0)).current;
+  
+  // Draggable FAB position
+  const screenWidth = Dimensions.get('window').width;
+  const screenHeight = Dimensions.get('window').height;
+  const [fabPosition, setFabPosition] = useState({ x: screenWidth - 72, y: screenHeight - 140 });
+  const panX = useRef(new Animated.Value(0)).current;
+  const panY = useRef(new Animated.Value(0)).current;
+  const startPosition = useRef({ x: 0, y: 0 });
+  const isDragging = useRef(false);
 
   const canSend = useMemo(() => (input.trim().length > 0 || selectedImage) && !sending, [input, selectedImage, sending]);
 
@@ -495,7 +504,7 @@ export default function ResidentChatBot() {
         }),
         Animated.spring(fabScale, {
           toValue: 0.8,
-          useNativeDriver: true,
+          useNativeDriver: false, // Changed to false to match other fabScale animations
         })
       ]).start();
     } else {
@@ -507,7 +516,7 @@ export default function ResidentChatBot() {
         }),
         Animated.spring(fabScale, {
           toValue: 1,
-          useNativeDriver: true,
+          useNativeDriver: false, // Changed to false to match other fabScale animations
         })
       ]).start();
     }
@@ -516,6 +525,122 @@ export default function ResidentChatBot() {
   const formatTime = (timestamp) => {
     return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+
+  // PanResponder for dragging the FAB
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only start dragging if movement is significant
+        return Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderGrant: () => {
+        isDragging.current = false;
+        startPosition.current = { ...fabPosition };
+        panX.setValue(0);
+        panY.setValue(0);
+        Animated.spring(fabScale, {
+          toValue: 1.1,
+          useNativeDriver: false, // Changed to false to match pan animations
+        }).start();
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Mark as dragging if movement is significant
+        if (Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5) {
+          isDragging.current = true;
+        }
+        panX.setValue(gestureState.dx);
+        panY.setValue(gestureState.dy);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // Check if it was a tap (small movement)
+        const isTap = Math.abs(gestureState.dx) < 5 && Math.abs(gestureState.dy) < 5;
+        
+        if (isTap && !isDragging.current) {
+          // It's a tap, open the chat
+          setOpen(true);
+          Animated.spring(fabScale, {
+            toValue: 1,
+            useNativeDriver: false, // Changed to false to match pan animations
+          }).start();
+          panX.setValue(0);
+          panY.setValue(0);
+          return;
+        }
+        
+        // Calculate new position
+        const newX = startPosition.current.x + gestureState.dx;
+        const newY = startPosition.current.y + gestureState.dy;
+        
+        // Define corner positions
+        const fabSize = 56;
+        const padding = 16;
+        const maxX = screenWidth - fabSize - padding;
+        const maxY = screenHeight - fabSize - padding - 100; // Account for tab bar
+        const minX = padding;
+        const minY = padding;
+        
+        // Define the four corners
+        const corners = [
+          { x: minX, y: minY, name: 'top-left' },      // Top-left
+          { x: maxX, y: minY, name: 'top-right' },     // Top-right
+          { x: minX, y: maxY, name: 'bottom-left' },   // Bottom-left
+          { x: maxX, y: maxY, name: 'bottom-right' },  // Bottom-right
+        ];
+        
+        // Find the nearest corner
+        let nearestCorner = corners[0];
+        let minDistance = Infinity;
+        
+        corners.forEach(corner => {
+          const distance = Math.sqrt(
+            Math.pow(newX - corner.x, 2) + Math.pow(newY - corner.y, 2)
+          );
+          if (distance < minDistance) {
+            minDistance = distance;
+            nearestCorner = corner;
+          }
+        });
+        
+        // Snap to the nearest corner
+        const finalX = nearestCorner.x;
+        const finalY = nearestCorner.y;
+        
+        // Update position state
+        setFabPosition({ x: finalX, y: finalY });
+        
+        // Animate to final position
+        const deltaX = finalX - startPosition.current.x;
+        const deltaY = finalY - startPosition.current.y;
+        
+        // Run animations with consistent driver settings
+        Animated.parallel([
+          Animated.spring(panX, {
+            toValue: deltaX,
+            useNativeDriver: false,
+            tension: 50,
+            friction: 7,
+          }),
+          Animated.spring(panY, {
+            toValue: deltaY,
+            useNativeDriver: false,
+            tension: 50,
+            friction: 7,
+          }),
+          Animated.spring(fabScale, {
+            toValue: 1,
+            useNativeDriver: false, // Changed to false to match pan animations
+          }),
+        ]).start(() => {
+          // Reset pan to zero after animation completes
+          panX.setValue(0);
+          panY.setValue(0);
+        });
+        
+        isDragging.current = false;
+      },
+    })
+  ).current;
 
   const renderTypingIndicator = () => (
     <View style={[styles.messageRow, styles.rowStart]}>
@@ -549,19 +674,30 @@ export default function ResidentChatBot() {
 
   return (
     <>
-      {/* Floating bubble with animation */}
-      <View pointerEvents="box-none" style={styles.fabContainer}>
-        <Animated.View style={{ transform: [{ scale: fabScale }] }}>
-          <TouchableOpacity 
-            onPress={() => setOpen(true)} 
-            style={styles.fab} 
-            accessibilityRole="button" 
-            accessibilityLabel="Open waste management assistant"
-          >
-            <FontAwesome5 name="robot" size={24} color="#ffffff" />
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
+      {/* Floating bubble with animation - draggable */}
+      <Animated.View
+        style={[
+          styles.fabContainer,
+          {
+            left: fabPosition.x,
+            top: fabPosition.y,
+            transform: [
+              { translateX: panX },
+              { translateY: panY },
+              { scale: fabScale },
+            ],
+          },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        <View 
+          style={styles.fab} 
+          accessibilityRole="button" 
+          accessibilityLabel="Open waste management assistant"
+        >
+          <FontAwesome5 name="robot" size={24} color="#ffffff" />
+        </View>
+      </Animated.View>
 
       {/* Chat panel as modal overlay */}
       <Modal visible={open} animationType="slide" transparent statusBarTranslucent onRequestClose={() => setOpen(false)}>
@@ -678,8 +814,7 @@ export default function ResidentChatBot() {
 const styles = StyleSheet.create({
   fabContainer: {
     position: 'absolute',
-    right: 16,
-    bottom: 84,
+    zIndex: 1000,
   },
   fab: {
     backgroundColor: '#22c55e',

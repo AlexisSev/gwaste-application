@@ -3,7 +3,7 @@ import { Feather } from '@expo/vector-icons';
 
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { router } from 'expo-router';
@@ -18,6 +18,7 @@ export default function ScheduleScreen() {
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedRouteId, setSelectedRouteId] = useState(null);
+  const [isDropdownVisible, setIsDropdownVisible] = useState(false);
 
   useEffect(() => {
     fetchRoutes();
@@ -136,6 +137,21 @@ export default function ScheduleScreen() {
     router.push('/resident');
   };
 
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout Confirmation',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: () => router.push('/login'),
+        },
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -153,6 +169,50 @@ export default function ScheduleScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.logoContainer}>
+          <Image
+            source={require('../../assets/images/logo.png')}
+            style={styles.logo}
+          />
+        </View>
+        <TouchableOpacity
+          style={styles.profileContainer}
+          onPress={() => setIsDropdownVisible(prev => !prev)}
+        >
+          <Image
+            source={require('../../assets/images/icon.png')}
+            style={styles.profilePic}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {isDropdownVisible && (
+        <View style={styles.dropdownMenu}>
+          <TouchableOpacity
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/resident/profile');
+            }}
+          >
+            <Text style={styles.dropdownText}>Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/resident/settings');
+            }}
+          >
+            <Text style={styles.dropdownText}>Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
+            <Text style={styles.dropdownText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <StatusBar style="auto" />
       <View style={styles.hero}>
         <Text style={[styles.heroTitle, { color: colors.primary }]}>Collection Schedule</Text>
@@ -251,9 +311,57 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  logoContainer: {
+    height: 40,
+  },
+  logo: {
+    height: 40,
+    width: 80,
+    resizeMode: 'contain',
+  },
+  profileContainer: {
+    position: 'relative',
+  },
+  profilePic: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
   scrollView: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 70,
+    right: 20,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 2000,
+    minWidth: 150,
+  },
+  dropdownItem: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#333',
   },
   hero: {
     backgroundColor: '#EEF6E8',
@@ -273,6 +381,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingBottom: 160,
   },
   selectorRow: {
     flexDirection: 'row',
