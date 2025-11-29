@@ -1,5 +1,6 @@
 // hooks/useLeafletMap.js
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Image } from 'react-native';
 import {
   AREA_COORDINATES,
   BOGO_CITY_BOUNDS,
@@ -21,17 +22,29 @@ export const useLeafletMap = (driverLabel) => {
   const [mapInitialized, setMapInitialized] = useState(false);
   const webviewRef = useRef(null);
   const geocodeCacheRef = useRef({});
+  const routeCacheRef = useRef({}); // Cache routes to reduce OSRM API calls
+  const pendingLocationRef = useRef(null); // Store location updates before map is ready
 
   /**
    * Generate HTML content for Leaflet map
    */
   const getMapHtml = useCallback(() => {
+    // Get the asset URI - handle both native and web environments
+    let truckIconUri;
+    try {
+      // Try native resolveAssetSource first
+      truckIconUri = Image.resolveAssetSource(TRUCK_MARKER.iconUrl).uri;
+    } catch (e) {
+      // Fallback for web environment - use the asset directly
+      truckIconUri = TRUCK_MARKER.iconUrl;
+    }
+    
     return `<!doctype html>
       <html>
         <head>
           <meta name="viewport" content="initial-scale=1.0, width=device-width" />
           <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-          <style>
+            <style>
             html,body,#map{height:100%;margin:0;padding:0;}
             .leaflet-control-zoom { display: none !important; }
             .custom-icon {
@@ -44,24 +57,29 @@ export const useLeafletMap = (driverLabel) => {
           <div id="map"></div>
           <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
           <script>
-            // Initialize map with default location and Bogo City bounds
+            // Initialize map with default location and expanded Bogo City bounds
             window.map = L.map('map', {
               zoomControl: false,
               attributionControl: false,
               maxBounds: [[${BOGO_CITY_BOUNDS.south}, ${BOGO_CITY_BOUNDS.west}], [${BOGO_CITY_BOUNDS.north}, ${BOGO_CITY_BOUNDS.east}]],
               maxBoundsViscosity: 1.0 // Prevents dragging outside bounds
-            }).setView([${DEFAULT_LOCATION.latitude}, ${DEFAULT_LOCATION.longitude}], 15);
+            }).setView([${DEFAULT_LOCATION.latitude}, ${DEFAULT_LOCATION.longitude}], 13);
             L.tileLayer('${OSM_TILE_LAYER.url}', {
-              attribution: '${OSM_TILE_LAYER.attribution}'
+              attribution: '${OSM_TILE_LAYER.attribution}',
+              maxZoom: ${OSM_TILE_LAYER.maxZoom || 18},
+              minZoom: ${OSM_TILE_LAYER.minZoom || 10},
+              // Enable tile caching to reduce data usage
+              crossOrigin: true,
+              // Browser will cache tiles automatically (typically 24h)
             }).addTo(window.map);
 
             // Create marker with smooth animation
             window.marker = L.marker([${DEFAULT_LOCATION.latitude}, ${DEFAULT_LOCATION.longitude}], {
-              icon: L.divIcon({
-                className: 'custom-icon',
-                html: "${TRUCK_MARKER.emoji}",
+              icon: L.icon({
+                iconUrl: '${truckIconUri}',
                 iconSize: [${TRUCK_MARKER.iconSize[0]}, ${TRUCK_MARKER.iconSize[1]}],
                 iconAnchor: [${TRUCK_MARKER.iconAnchor[0]}, ${TRUCK_MARKER.iconAnchor[1]}],
+                popupAnchor: [0, -18]
               })
             }).addTo(window.map).bindPopup("You (${driverLabel.replace(/"/g, '\\"')})");
 
@@ -83,30 +101,70 @@ export const useLeafletMap = (driverLabel) => {
    * Update marker position on the map
    */
   const updateMarkerPosition = useCallback((newLat, newLng) => {
-    if (!webviewRef.current || !mapInitialized) return;
+    // Store location if map isn't ready yet (will be applied when map initializes)
+    if (!webviewRef.current || !mapInitialized) {
+      pendingLocationRef.current = { lat: newLat, lng: newLng };
+      return;
+    }
+    
+    // Clear pending location since we're applying it now
+    if (pendingLocationRef.current) {
+      pendingLocationRef.current = null;
+    }
 
+    // Get the asset URI - handle both native and web environments
+    let truckIconUri;
+    try {
+      // Try native resolveAssetSource first
+      truckIconUri = Image.resolveAssetSource(TRUCK_MARKER.iconUrl).uri;
+    } catch (e) {
+      // Fallback for web environment - use the asset directly
+      truckIconUri = TRUCK_MARKER.iconUrl;
+    }
     const script = `
-      if (window.marker && window.map) {
-        // Smooth animation to new position
-        window.marker.setLatLng([${newLat}, ${newLng}]);
-        // Update popup content with current coordinates
-        window.marker.getPopup().setContent(
-          "You (${driverLabel.replace(/"/g, '\\"')})<br>Lat: ${newLat.toFixed(5)}<br>Lng: ${newLng.toFixed(5)}"
-        );
+      try {
+        if (window.marker && window.map) {
+          // Ensure icon is properly set
+          if (!window.marker.getIcon() || !window.marker.getIcon().options.iconUrl) {
+            window.marker.setIcon(L.icon({
+              iconUrl: '${truckIconUri}',
+              iconSize: [${TRUCK_MARKER.iconSize[0]}, ${TRUCK_MARKER.iconSize[1]}],
+              iconAnchor: [${TRUCK_MARKER.iconAnchor[0]}, ${TRUCK_MARKER.iconAnchor[1]}],
+              popupAnchor: [0, -18]
+            }));
+          }
+          // Smooth animation to new position
+          window.marker.setLatLng([${newLat}, ${newLng}]);
+          // Update popup content with current coordinates
+          try {
+            window.marker.getPopup().setContent(
+              "You (${driverLabel.replace(/"/g, '\\"')})<br>Lat: ${newLat.toFixed(5)}<br>Lng: ${newLng.toFixed(5)}"
+            );
+          } catch (e) {
+            // Popup might not exist yet, create it
+            window.marker.bindPopup("You (${driverLabel.replace(/"/g, '\\"')})<br>Lat: ${newLat.toFixed(5)}<br>Lng: ${newLng.toFixed(5)}");
+          }
 
-        // Update or create the path polyline
-        try {
-          window.__pathPoints = window.__pathPoints || [];
-          window.__pathPoints.push([${newLat}, ${newLng}]);
-          if (window.__pathPoints.length > 300) {
-            window.__pathPoints = window.__pathPoints.slice(window.__pathPoints.length - 300);
+          // Update or create the path polyline
+          try {
+            window.__pathPoints = window.__pathPoints || [];
+            window.__pathPoints.push([${newLat}, ${newLng}]);
+            if (window.__pathPoints.length > 300) {
+              window.__pathPoints = window.__pathPoints.slice(window.__pathPoints.length - 300);
+            }
+            if (!window.pathLine) {
+              window.pathLine = L.polyline(window.__pathPoints, { color: '${MAP_STYLES.pathLine.color}', weight: ${MAP_STYLES.pathLine.weight}, opacity: ${MAP_STYLES.pathLine.opacity} }).addTo(window.map);
+            } else {
+              window.pathLine.setLatLngs(window.__pathPoints);
+            }
+          } catch (e) {
+            // console.error('Error updating path line:', e);
           }
-          if (!window.pathLine) {
-            window.pathLine = L.polyline(window.__pathPoints, { color: '${MAP_STYLES.pathLine.color}', weight: ${MAP_STYLES.pathLine.weight}, opacity: ${MAP_STYLES.pathLine.opacity} }).addTo(window.map);
-          } else {
-            window.pathLine.setLatLngs(window.__pathPoints);
-          }
-        } catch (e) {}
+        } else {
+          // console.warn('Marker or map not available for position update');
+        }
+      } catch (e) {
+        // console.error('Error updating marker position:', e);
       }
     `;
     webviewRef.current.injectJavaScript(script);
@@ -118,8 +176,26 @@ export const useLeafletMap = (driverLabel) => {
   const setInitialMarkerPosition = useCallback((lat, lng) => {
     if (!webviewRef.current || !mapInitialized) return;
 
+    // Get the asset URI - handle both native and web environments
+    let truckIconUri;
+    try {
+      // Try native resolveAssetSource first
+      truckIconUri = Image.resolveAssetSource(TRUCK_MARKER.iconUrl).uri;
+    } catch (e) {
+      // Fallback for web environment - use the asset directly
+      truckIconUri = TRUCK_MARKER.iconUrl;
+    }
     const script = `
       if (window.marker && window.map) {
+        // Update icon if not set properly
+        if (!window.marker.getIcon() || !window.marker.getIcon().options.iconUrl) {
+          window.marker.setIcon(L.icon({
+            iconUrl: '${truckIconUri}',
+            iconSize: [${TRUCK_MARKER.iconSize[0]}, ${TRUCK_MARKER.iconSize[1]}],
+            iconAnchor: [${TRUCK_MARKER.iconAnchor[0]}, ${TRUCK_MARKER.iconAnchor[1]}],
+            popupAnchor: [0, -18]
+          }));
+        }
         // Set initial position without animation
         window.marker.setLatLng([${lat}, ${lng}]);
         window.marker.getPopup().setContent(
@@ -172,7 +248,7 @@ export const useLeafletMap = (driverLabel) => {
       if (lowerIndex[key]) return lowerIndex[key];
     } catch (_) {}
 
-    // 2) Check cache
+    // 2) Check cache (persists for app session, reduces API calls)
     if (geocodeCacheRef.current[key]) return geocodeCacheRef.current[key];
 
     // 3) Fetch from Nominatim with Bogo City bounds
@@ -216,6 +292,12 @@ export const useLeafletMap = (driverLabel) => {
         lat >= BOGO_CITY_BOUNDS.south && lat <= BOGO_CITY_BOUNDS.north &&
         lng >= BOGO_CITY_BOUNDS.west && lng <= BOGO_CITY_BOUNDS.east;
 
+      // Get route-specific color or fallback to default
+      const routeKey = routeNumber ? `Route ${routeNumber}` : null;
+      const routeStyle = routeKey && MAP_STYLES.routeLines[routeKey]
+        ? MAP_STYLES.routeLines[routeKey]
+        : MAP_STYLES.routeLine;
+
       if (!isWithinBounds(startLat, startLng) || !isWithinBounds(endLat, endLng)) {
         console.warn('Route start or end point is outside Bogo City bounds - using direct line instead');
         // Fall back to direct line if points are outside bounds
@@ -226,12 +308,16 @@ export const useLeafletMap = (driverLabel) => {
             window.routeLatLngs = ${JSON.stringify(latlngs)};
             if (!window.routeLine) {
               window.routeLine = L.polyline(window.routeLatLngs, {
-                color: '${MAP_STYLES.routeLine.color}',
-                weight: ${MAP_STYLES.routeLine.weight},
-                opacity: ${MAP_STYLES.routeLine.opacity}
+                color: '${routeStyle.color}',
+                weight: ${routeStyle.weight},
+                opacity: ${routeStyle.opacity}
               }).addTo(window.map);
             } else {
               window.routeLine.setLatLngs(window.routeLatLngs);
+              // Update color if route changed
+              if (window.routeLine.options.color !== '${routeStyle.color}') {
+                window.routeLine.setStyle({ color: '${routeStyle.color}' });
+              }
             }
             // Add destination marker and geofence for direct route
             const __dest = window.routeLatLngs[window.routeLatLngs.length - 1];
@@ -268,23 +354,102 @@ export const useLeafletMap = (driverLabel) => {
         return;
       }
 
+      // Check route cache first (round coordinates to reduce cache misses)
+      const routeCacheKey = `${Math.round(startLat * 1000)}_${Math.round(startLng * 1000)}_${Math.round(endLat * 1000)}_${Math.round(endLng * 1000)}`;
+      if (routeCacheRef.current[routeCacheKey]) {
+        let coords = routeCacheRef.current[routeCacheKey];
+        // Filter and process cached route
+        coords = coords.filter(([lng, lat]) => isWithinBounds(lat, lng));
+        if (coords.length < 2) {
+          coords = [[startLng, startLat], [endLng, endLng]];
+        }
+        const latlngs = coords.map(([lng, lat]) => [lat, lng]);
+        // Use cached route (skip to rendering)
+        const js = `
+          try {
+            window.routeLatLngs = ${JSON.stringify(latlngs)};
+            if (!window.routeLine) {
+              window.routeLine = L.polyline(window.routeLatLngs, {
+                color: '${routeStyle.color}',
+                weight: ${routeStyle.weight},
+                opacity: ${routeStyle.opacity}
+              }).addTo(window.map);
+            } else {
+              window.routeLine.setLatLngs(window.routeLatLngs);
+              if (window.routeLine.options.color !== '${routeStyle.color}') {
+                window.routeLine.setStyle({ color: '${routeStyle.color}' });
+              }
+            }
+            try { window.routeLine.bringToFront(); } catch (e) {}
+            const __dest = window.routeLatLngs[window.routeLatLngs.length - 1];
+            if (!window.routeDestMarker) {
+              const __pinUrl = '${DESTINATION_MARKER.iconUrl}';
+              window.routeDestMarker = L.marker(__dest, {
+                icon: L.icon({
+                  iconUrl: __pinUrl,
+                  iconRetinaUrl: __pinUrl,
+                  iconSize: [${DESTINATION_MARKER.iconSize[0]}, ${DESTINATION_MARKER.iconSize[1]}],
+                  iconAnchor: [${DESTINATION_MARKER.iconAnchor[0]}, ${DESTINATION_MARKER.iconAnchor[1]}],
+                  popupAnchor: [${DESTINATION_MARKER.popupAnchor[0]}, ${DESTINATION_MARKER.popupAnchor[1]}]
+                })
+              }).addTo(window.map);
+              window.routeDestMarker.bindPopup(${JSON.stringify(' ')} + ${JSON.stringify(destName)});
+            } else {
+              window.routeDestMarker.setLatLng(__dest);
+              try { window.routeDestMarker.setPopupContent(${JSON.stringify('')} + ${JSON.stringify(destName)}); } catch (e) {}
+            }
+            if (!window.routeGeofence) {
+              window.routeGeofence = L.circle(__dest, {
+                radius: ${GEOFENCE_RADIUS_METERS},
+                color: '${MAP_STYLES.geofenceCircle.color}',
+                weight: ${MAP_STYLES.geofenceCircle.weight},
+                opacity: ${MAP_STYLES.geofenceCircle.opacity},
+                fillColor: '${MAP_STYLES.geofenceCircle.fillColor}',
+                fillOpacity: ${MAP_STYLES.geofenceCircle.fillOpacity}
+              }).addTo(window.map);
+            } else {
+              window.routeGeofence.setLatLng(__dest);
+              window.routeGeofence.setRadius(${GEOFENCE_RADIUS_METERS});
+            }
+            try { window.routeGeofence.bringToFront(); } catch (e) {}
+            try { window.routeDestMarker.bringToFront(); } catch (e) {}
+            try { window.map.fitBounds(window.routeLine.getBounds(), { padding: [20, 20] }); } catch (e) {}
+          } catch (e) {}
+        `;
+        webviewRef.current.injectJavaScript(js);
+        return;
+      }
+
+      // Fetch route from OSRM API
       const url = `${OSRM_ROUTING_URL}/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
       const res = await fetch(url);
       const data = await res.json();
       let coords = data?.routes?.[0]?.geometry?.coordinates || [];
+      
+      // Cache the route for future use
+      if (coords.length > 0) {
+        routeCacheRef.current[routeCacheKey] = coords;
+        // Limit cache size to prevent memory issues (keep last 50 routes)
+        const cacheKeys = Object.keys(routeCacheRef.current);
+        if (cacheKeys.length > 50) {
+          delete routeCacheRef.current[cacheKeys[0]];
+        }
+      }
 
       // Fallback to straight line if routing fails
       if (!Array.isArray(coords) || coords.length === 0) {
         coords = [[startLng, startLat], [endLng, endLat]];
       }
 
-      const latlngs = coords.map(([lng, lat]) => [lat, lng]);
+      // Filter out coordinates that are outside Bogo City bounds (in case OSRM returns a route that goes outside)
+      coords = coords.filter(([lng, lat]) => isWithinBounds(lat, lng));
 
-      // Get route-specific color or fallback to default
-      const routeKey = routeNumber ? `Route ${routeNumber}` : null;
-      const routeStyle = routeKey && MAP_STYLES.routeLines[routeKey]
-        ? MAP_STYLES.routeLines[routeKey]
-        : MAP_STYLES.routeLine;
+      // Ensure we still have at least the start and end points
+      if (coords.length < 2) {
+        coords = [[startLng, startLat], [endLng, endLng]];
+      }
+
+      const latlngs = coords.map(([lng, lat]) => [lat, lng]);
 
       const js = `
         try {
@@ -349,6 +514,15 @@ export const useLeafletMap = (driverLabel) => {
       webviewRef.current.injectJavaScript(js);
     } catch (_e) {}
   }, [mapInitialized]);
+
+  // Apply pending location when map initializes
+  useEffect(() => {
+    if (mapInitialized && pendingLocationRef.current && webviewRef.current) {
+      const { lat, lng } = pendingLocationRef.current;
+      updateMarkerPosition(lat, lng);
+      pendingLocationRef.current = null;
+    }
+  }, [mapInitialized, updateMarkerPosition]);
 
   return {
     webviewRef,

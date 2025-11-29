@@ -1,13 +1,12 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import * as Location from 'expo-location';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { AlertCircle, CheckCircle, MapPin } from 'lucide-react-native';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import PrimaryButton from '../../components/ui/PrimaryButton';
+import { useRouter } from 'expo-router';
+import { AlertCircle, CheckCircle, Navigation, Truck } from 'lucide-react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
 import { supabase } from '../../services/supabaseClient';
-import { updateCurrentAndNextAreas } from '../../utils/scheduleHelpers';
 
 export default function LandingScreen() {
   const [displayName, setDisplayName] = useState('');
@@ -15,20 +14,33 @@ export default function LandingScreen() {
   // Removed unused states: assignedRoutes, areasCollected (not displayed)
   const [todaysSchedule, setTodaysSchedule] = useState([]);
   const [routeNames, setRouteNames] = useState([]);
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [isDropdownVisible, setIsDropdownVisible] = useState(false);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [collectedAreas, setCollectedAreas] = useState(new Set());
   const [locationPermission, setLocationPermission] = useState(false);
   const [collectedAreasLoaded, setCollectedAreasLoaded] = useState(false);
-  const [profileImage, setProfileImage] = useState(null);
-  const [routeStarted, setRouteStarted] = useState(false);
-  const [showIssueModal, setShowIssueModal] = useState(false);
-  const [issueDescription, setIssueDescription] = useState('');
-  const [reportingIssue, setReportingIssue] = useState(false);
-  const [currentArea, setCurrentArea] = useState(null);
-  const [nextArea, setNextArea] = useState(null);
   const router = useRouter();
   const { collector, logout } = useCollectorAuth();
+  const [recentComplaints] = useState([
+    {
+      id: 'complaint-1',
+      title: 'Overflowing bin',
+      location: 'Barangay Poblacion',
+      severity: 'medium',
+      reportedAgo: 'Reported 2 hrs ago',
+    },
+    {
+      id: 'complaint-2',
+      title: 'Missed Pickup',
+      location: 'San Isidro',
+      severity: 'high',
+      reportedAgo: 'Reported 5 hrs ago',
+    },
+  ]);
+  const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+  const [issueType, setIssueType] = useState('');
+  const [issueDescription, setIssueDescription] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const formatTime = (timeString) => {
     if (!timeString) return '';
@@ -214,6 +226,48 @@ export default function LandingScreen() {
     }
   };
 
+  const handleReportTruckIssue = () => {
+    setIsReportModalVisible(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsReportModalVisible(false);
+    setIssueType('');
+    setIssueDescription('');
+  };
+
+  const handleSubmitIssue = async () => {
+    if (!issueType.trim() || !issueDescription.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Here you can add code to submit to your backend/database
+      // For now, we'll just show a success message
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      
+      Alert.alert(
+        'Issue Reported',
+        'Your truck issue has been reported. Support will contact you shortly.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              handleCloseModal();
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to submit issue. Please try again.');
+      console.error('Error submitting issue:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Notify residents when truck enters/leaves geofence
   const notifyResidents = async (area, status) => {
     try {
@@ -318,9 +372,9 @@ export default function LandingScreen() {
       
       // Update the schedule items to show collected status
       setTodaysSchedule(prevSchedule => {
-        const updatedSchedule = prevSchedule.map(item => {
+        return prevSchedule.map(item => {
           const isCollected = collectedSet.has(item.location);
-
+          
           if (isCollected) {
             return {
               ...item,
@@ -330,15 +384,8 @@ export default function LandingScreen() {
           }
           return item;
         });
-
-        // Update current and next areas based on the updated schedule
-        const { current, next } = updateCurrentAndNextAreas(updatedSchedule, collectedSet);
-        setCurrentArea(current);
-        setNextArea(next);
-
-        return updatedSchedule;
       });
-
+      
       setCollectedAreasLoaded(true);
       
     } catch (error) {
@@ -349,25 +396,9 @@ export default function LandingScreen() {
 
   useEffect(() => {
     const fetchCollectorAndRoutes = async () => {
-      if (collector && routeStarted) {
+      if (collector) {
         try {
           setDisplayName(collector.driver || collector.firstName || '');
-
-          // Fetch profile image from database if not already in collector object
-          if (collector.profile_image) {
-            setProfileImage(collector.profile_image);
-          } else if (collector.id) {
-            const { data: collectorData, error: collectorError } = await supabase
-              .from('collectors')
-              .select('profile_image')
-              .eq('id', collector.id)
-              .single();
-
-            if (!collectorError && collectorData?.profile_image) {
-              setProfileImage(collectorData.profile_image);
-            }
-          }
-
           const { data: routesData, error } = await supabase
             .from('routes')
             .select('*')
@@ -383,7 +414,7 @@ export default function LandingScreen() {
             if (data.time && data.areas && data.areas.length > 0) {
               // Generate time intervals for each area
               const timeIntervals = generateTimeIntervals(data.time, data.end_time, data.areas);
-
+              
               // Create schedule entries for each time interval
               timeIntervals.forEach(interval => {
                 const scheduleEntry = {
@@ -410,59 +441,15 @@ export default function LandingScreen() {
           setTodaysSchedule([]);
           setRouteNames([]);
         }
-      } else if (collector) {
-        // Just set display name and profile image when route not started
-        setDisplayName(collector.driver || collector.firstName || '');
-        if (collector.profile_image) {
-          setProfileImage(collector.profile_image);
-        } else if (collector.id) {
-          supabase
-            .from('collectors')
-            .select('profile_image')
-            .eq('id', collector.id)
-            .single()
-            .then(({ data, error }) => {
-              if (!error && data?.profile_image) {
-                setProfileImage(data.profile_image);
-              }
-            })
-            .catch(() => {});
-        }
       } else {
         setDisplayName('');
         setTodaysSchedule([]);
         setRouteNames([]);
-        setProfileImage(null);
       }
       setLoading(false);
     };
     fetchCollectorAndRoutes();
-  }, [collector, routeStarted]);
-
-  // Refresh profile image when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      const refreshProfileImage = async () => {
-        if (collector?.id) {
-          try {
-            const { data, error } = await supabase
-              .from('collectors')
-              .select('profile_image')
-              .eq('id', collector.id)
-              .single();
-
-            if (!error && data?.profile_image) {
-              setProfileImage(data.profile_image);
-            }
-          } catch (err) {
-            console.error('Error refreshing profile image:', err);
-          }
-        }
-      };
-      
-      refreshProfileImage();
-    }, [collector?.id])
-  );
+  }, [collector]);
 
   useEffect(() => {
     if (!collector) {
@@ -474,182 +461,23 @@ export default function LandingScreen() {
     }
   }, [collector, router]);
 
-  // Load collected areas when schedule is loaded and route is started
+  // Load collected areas when schedule is loaded
   useEffect(() => {
-    if (collector && routeStarted && todaysSchedule.length > 0 && !collectedAreasLoaded) {
+    if (collector && todaysSchedule.length > 0 && !collectedAreasLoaded) {
       loadCollectedAreas();
     }
-  }, [collector, routeStarted, todaysSchedule, collectedAreasLoaded]);
+  }, [collector, todaysSchedule, collectedAreasLoaded]);
 
-  // Start location tracking when route is started
+  // Start location tracking when component mounts
   useEffect(() => {
-    if (collector && routeStarted && todaysSchedule.length > 0) {
+    if (collector && todaysSchedule.length > 0) {
       startLocationTracking();
     }
-  }, [collector, routeStarted, todaysSchedule]);
+  }, [collector, todaysSchedule]);
 
-  // Update current and next areas periodically when route is started
-  useEffect(() => {
-    if (routeStarted && todaysSchedule.length > 0) {
-      const updateAreas = () => {
-        const { current, next } = updateCurrentAndNextAreas(todaysSchedule, collectedAreas);
-        setCurrentArea(current);
-        setNextArea(next);
-      };
-
-      // Update immediately
-      updateAreas();
-
-      // Update every minute
-      const interval = setInterval(updateAreas, 60000);
-      return () => clearInterval(interval);
-    }
-  }, [routeStarted, todaysSchedule, collectedAreas]);
-
-  // Start route handler
-  const handleStartRoute = async () => {
-    try {
-      // Check if it's the collector's turn (optional validation)
-      const today = new Date().toISOString().split('T')[0];
-      const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-
-      // Check if collector has routes assigned for today
-      const { data: routesData, error } = await supabase
-        .from('routes')
-        .select('*')
-        .eq('driver', collector.driver);
-
-      if (error || !routesData || routesData.length === 0) {
-        Alert.alert(
-          "No Routes Assigned",
-          "You don't have any routes assigned for today. Please contact your supervisor."
-        );
-        return;
-      }
-
-      // Check if it's their scheduled day (if dayOff is specified)
-      const hasScheduledRoute = routesData.some(route => {
-        if (route.dayOff && route.dayOff.toLowerCase() === dayOfWeek) {
-          return false; // It's their day off
-        }
-        return true; // They have a route for today
-      });
-
-      if (!hasScheduledRoute) {
-        Alert.alert(
-          "Not Your Collection Day",
-          "Today is your scheduled day off. Please check with your supervisor if you need to collect today."
-        );
-        return;
-      }
-
-      // Start the route
-      setRouteStarted(true);
-      Alert.alert("Route Started", "Your collection route has been started. Location tracking is now active.");
-
-    } catch (error) {
-      console.error('Error starting route:', error);
-      Alert.alert("Error", "Failed to start route. Please try again.");
-    }
-  };
-
-  // Report truck issue handler
-  const handleReportIssue = async () => {
-    if (!issueDescription.trim()) {
-      Alert.alert("Error", "Please describe the truck issue.");
-      return;
-    }
-
-    setReportingIssue(true);
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const currentTime = new Date().toISOString();
-
-      // 1. Record the truck issue in collections table
-      const { error: issueError } = await supabase.from('collections').insert([{
-        collector_id: collector?.id,
-        collector_name: collector?.firstName || collector?.driver,
-        collected_date: today,
-        areas_collected: [], // Empty since truck has issues
-        route_number: todaysSchedule.length > 0 ? todaysSchedule[0].routeNumber : null,
-        collected_at: currentTime,
-        location: currentLocation,
-        status: 'truck_issue',
-        collectionType: 'issue_report',
-        issue_description: issueDescription.trim(),
-        timestamp: Date.now()
-      }]);
-
-      if (issueError) throw issueError;
-
-      // 2. Notify affected residents (current and next areas)
-      const areasToNotify = [];
-      if (currentArea) areasToNotify.push(currentArea.location);
-      if (nextArea) areasToNotify.push(nextArea.location);
-
-      // Get all unique areas from today's schedule
-      const allAreas = [...new Set(todaysSchedule.map(item => item.location))];
-      areasToNotify.push(...allAreas.slice(0, 3)); // Notify first 3 areas max
-
-      const uniqueAreas = [...new Set(areasToNotify)];
-
-      // Send notifications to residents
-      for (const area of uniqueAreas) {
-        await supabase.from('notifications').insert([{
-          area: area,
-          status: 'truck_issue',
-          collector_id: collector?.id,
-          timestamp: currentTime,
-          message: `🚫 TRUCK ISSUE ALERT: ${collector?.firstName || collector?.driver}'s waste collection truck has encountered an issue: "${issueDescription.trim()}". Collection may be delayed. Please contact admin for updates.`
-        }]);
-      }
-
-      // 3. Notify admin (you might want to create an admin_notifications table or use a different approach)
-      await supabase.from('notifications').insert([{
-        area: 'ADMIN',
-        status: 'truck_issue_admin',
-        collector_id: collector?.id,
-        timestamp: currentTime,
-        message: `🚨 TRUCK ISSUE REPORT: ${collector?.firstName || collector?.driver} reported: "${issueDescription.trim()}". Current location: ${currentLocation ? `${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}` : 'Unknown'}. Route: ${todaysSchedule.length > 0 ? `Route ${todaysSchedule[0].routeNumber}` : 'Unknown'}.`
-      }]);
-
-      Alert.alert(
-        "Issue Reported",
-        "Your truck issue has been reported to residents and admin. Collection activities have been paused.",
-        [{ text: "OK", onPress: () => {
-          setShowIssueModal(false);
-          setIssueDescription('');
-        }}]
-      );
-
-    } catch (error) {
-      console.error('Error reporting truck issue:', error);
-      Alert.alert("Error", "Failed to report issue. Please try again.");
-    } finally {
-      setReportingIssue(false);
-    }
-  };
-
-  // Manual collection button handler
-  const handleManualCollection = async (area, routeNumber) => {
-    Alert.alert(
-      'Mark as Collected',
-      `Are you sure you want to mark ${area} as collected?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Mark Collected',
-          onPress: async () => {
-            await markAreaAsCollected(area, routeNumber);
-            Alert.alert('Success', `${area} has been marked as collected and saved to database!`);
-          }
-        }
-      ]
-    );
-  };
 
   const handleLogout = async () => {
-    setShowDropdown(false);
+    setIsDropdownVisible(false);
     Alert.alert(
       "Logout Confirmation",
       "Are you sure you want to logout?",
@@ -675,86 +503,76 @@ export default function LandingScreen() {
   }
 
   return (
+    <SafeAreaView style={styles.safeArea}>
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>Gwaste</Text>
-          <View style={styles.truckIcon}>
-            <Text style={styles.truckEmoji}>🚛</Text>
-          </View>
+          <Image 
+            source={require('../../assets/images/logo.png')} 
+            style={styles.logo}
+          />
         </View>
-        <TouchableOpacity style={styles.profileContainer} onPress={() => setShowDropdown(v => !v)}>
-          <View style={styles.profileCircle}>
-            <Image
-              source={
-                profileImage
-                  ? { uri: profileImage.startsWith('data:') ? profileImage : `data:image/jpeg;base64,${profileImage}` }
-                  : require('../../assets/images/icon.png')
-              }
-              style={styles.profileImage}
-            />
-            <View style={styles.onlineIndicator} />
-          </View>
+        <TouchableOpacity
+          style={styles.profileContainer}
+          onPress={() => setIsDropdownVisible(!isDropdownVisible)}
+        >
+          <Image
+            source={collector?.profile_image ? { uri: collector.profile_image } : require('../../assets/images/icon.png')}
+            style={styles.profilePic}
+          />
         </TouchableOpacity>
-        {showDropdown && (
-          <View style={styles.dropdownMenu}>
-            <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/collector/profile'); }}>
-              <Text style={styles.dropdownText}>My Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/collector/settings'); }}>
-              <Text style={styles.dropdownText}>Settings</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
-              <Text style={styles.dropdownText}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      {isDropdownVisible && (
+        <View style={styles.dropdownMenu}>
+          <TouchableOpacity 
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/collector/profile');
+            }}
+          >
+            <Text style={styles.dropdownText}>Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/collector/settings');
+            }}
+          >
+            <Text style={styles.dropdownText}>Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
+            <Text style={styles.dropdownText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.greetingSection}>
           {loading ? (
             <ActivityIndicator size="small" color="#8BC500" />
           ) : (
             <Text style={styles.greeting}>
-              Good Morning{displayName ? `, ${displayName}` : ''}!
-              {routeStarted ? ' Ready to collect?' : ' Ready to start your route?'}
+              Good Morning{displayName ? `, ${displayName}` : ''}! 
             </Text>
           )}
-          {routeStarted && (
-            <View>
-              <View style={styles.routeInfo}>
-                <AlertCircle size={16} color="#FF4444" />
-                <Text style={styles.routeText}>
-                  {loading
-                    ? '...'
-                    : routeNames.length > 0
-                      ? routeNames.join(', ')
-                      : 'No Route Assigned'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.reportIssueButton}
-                onPress={() => setShowIssueModal(true)}
-              >
-                <AlertCircle size={16} color="#fff" />
-                <Text style={styles.reportIssueText}>Report Truck Issue</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          {!routeStarted && !loading && (
-            <View style={styles.startRouteSection}>
-              <Text style={styles.startRouteText}>
-                You need to start your collection route before you can begin collecting waste.
-              </Text>
-              <PrimaryButton
-                onPress={handleStartRoute}
-                style={styles.startRouteButton}
-              >
-                <Text style={styles.startRouteButtonText}>Start Route</Text>
-              </PrimaryButton>
-            </View>
-          )}
+          <View style={styles.routeInfo}>
+            <AlertCircle size={16} color="#FF4444" />
+            <Text style={styles.routeText}>
+              {loading
+                ? '...'
+                : routeNames.length > 0
+                  ? routeNames.join(', ')
+                  : 'No Route Assigned'}
+            </Text>
+          </View>
         </View>
 
         {/* <View style={styles.section}>
@@ -773,203 +591,320 @@ export default function LandingScreen() {
           </View>
         </View> */}
 
-
-        {routeStarted && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Today`s Schedule:</Text>
-            <View style={styles.scheduleList}>
-              {todaysSchedule.length === 0 ? (
-                <Text style={{ color: '#888', padding: 8 }}>No schedule for today.</Text>
-              ) : !collectedAreasLoaded ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="small" color="#458A3D" />
-                  <Text style={styles.loadingText}>Loading collection status...</Text>
-                </View>
-              ) : (
-                todaysSchedule.map((item, idx) => {
-                  const isCollected = item.collected || collectedAreas.has(item.location);
-                  return (
-                    <TouchableOpacity
-                      style={[
-                        styles.scheduleItem,
-                        isCollected && styles.scheduleItemCollected
-                      ]}
-                      key={idx}
-                      onPress={() => !isCollected && handleManualCollection(item.location, item.routeNumber)}
-                      disabled={isCollected}
-                    >
-                      <View style={styles.scheduleTimeContainer}>
-                        <Text style={[
-                          styles.scheduleTime,
-                          isCollected && styles.scheduleTimeCollected
-                        ]}>
-                          {formatTime(item.time)} - {formatTime(item.endTime)}
-                        </Text>
-                        <Text style={[
-                          styles.scheduleRoute,
-                          isCollected && styles.scheduleRouteCollected
-                        ]}>
-                          Route {item.routeNumber}
-                        </Text>
-                        {item.areaIndex && (
-                          <Text style={[
-                            styles.areaIndex,
-                            isCollected && styles.areaIndexCollected
-                          ]}>
-                            Area {item.areaIndex}
-                          </Text>
-                        )}
-                      </View>
-                      <View style={styles.scheduleLocationContainer}>
-                        <View style={styles.locationHeader}>
-                          <Text style={[
-                            styles.scheduleLocation,
-                            isCollected && styles.scheduleLocationCollected
-                          ]}>
-                            {item.location}
-                          </Text>
-                          {isCollected && (
-                            <View style={styles.collectedIndicator}>
-                              <CheckCircle size={20} color="#2E7D32" />
-                              <Text style={styles.collectedText}>Collected</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={[
-                          styles.scheduleType,
-                          isCollected && styles.scheduleTypeCollected
-                        ]}>
-                          {item.type}
-                        </Text>
-                        {item.frequency && (
-                          <Text style={[
-                            styles.scheduleFrequency,
-                            isCollected && styles.scheduleFrequencyCollected
-                          ]}>
-                            {item.frequency}
-                          </Text>
-                        )}
-                        {isCollected && item.collectedAt && (
-                          <Text style={styles.collectedTime}>
-                            Collected at: {new Date(item.collectedAt).toLocaleTimeString()}
-                          </Text>
-                        )}
-                      </View>
-                      {!isCollected && (
-                        <View style={styles.collectionButton}>
-                          <MapPin size={16} color="#458A3D" />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })
-              )}
+        {/* Live Route Status Card */}
+        <View style={styles.section}>
+          <View style={styles.liveRouteCard}>
+            <View style={styles.liveRouteHeader}>
+              <Navigation size={20} color="#458A3D" />
+              <Text style={styles.liveRouteTitle}>Live Route Status</Text>
             </View>
+            <Text style={styles.liveRouteText}>
+              Your assigned route has automatically started.
+            </Text>
+            <Text style={styles.liveRouteText}>
+              GPS tracking is active — location updates automatically.
+            </Text>
           </View>
-        )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Today`s Schedule:</Text>
+          <View style={styles.scheduleList}>
+            {todaysSchedule.length === 0 ? (
+              <Text style={{ color: '#888', padding: 8 }}>No schedule for today.</Text>
+            ) : !collectedAreasLoaded ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#458A3D" />
+                <Text style={styles.loadingText}>Loading collection status...</Text>
+              </View>
+            ) : (
+              todaysSchedule.map((item, idx) => {
+                const isCollected = item.collected || collectedAreas.has(item.location);
+                return (
+                  <View
+                    style={[
+                      styles.scheduleItem,
+                      isCollected && styles.scheduleItemCollected
+                    ]}
+                    key={idx}
+                  >
+                    <View style={styles.scheduleTimeContainer}>
+                      <Text style={[
+                        styles.scheduleTime,
+                        isCollected && styles.scheduleTimeCollected
+                      ]}>
+                        {formatTime(item.time)} - {formatTime(item.endTime)}
+                      </Text>
+                      <Text style={[
+                        styles.scheduleRoute,
+                        isCollected && styles.scheduleRouteCollected
+                      ]}>
+                        Route {item.routeNumber}
+                      </Text>
+                      {item.areaIndex && (
+                        <Text style={[
+                          styles.areaIndex,
+                          isCollected && styles.areaIndexCollected
+                        ]}>
+                          Area {item.areaIndex}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.scheduleLocationContainer}>
+                      <View style={styles.locationHeader}>
+                        <Text style={[
+                          styles.scheduleLocation,
+                          isCollected && styles.scheduleLocationCollected
+                        ]}>
+                          {item.location}
+                        </Text>
+                        {isCollected && (
+                          <View style={styles.collectedIndicator}>
+                            <CheckCircle size={20} color="#2E7D32" />
+                            <Text style={styles.collectedText}>Collected</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[
+                        styles.scheduleType,
+                        isCollected && styles.scheduleTypeCollected
+                      ]}>
+                        {item.type}
+                      </Text>
+                      {item.frequency && (
+                        <Text style={[
+                          styles.scheduleFrequency,
+                          isCollected && styles.scheduleFrequencyCollected
+                        ]}>
+                          {item.frequency}
+                        </Text>
+                      )}
+                      {isCollected && item.collectedAt && (
+                        <Text style={styles.collectedTime}>
+                          Collected at: {new Date(item.collectedAt).toLocaleTimeString()}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.complaintCard}>
+            <Text style={styles.complaintTitle}>Recent Complaints</Text>
+            {(recentComplaints || []).length > 0 ? (
+              recentComplaints.map((item, idx) => (
+                <View key={item?.id || idx} style={styles.complaintRow}>
+                  <View
+                    style={[
+                      styles.complaintIndicator,
+                      { backgroundColor: item?.severity === 'high' ? '#EF4444' : '#FBBF24' },
+                    ]}
+                  />
+                  <View style={styles.complaintInfo}>
+                    <Text style={styles.complaintText}>
+                      {item?.title || 'Overflowing bin'} – {item?.location || 'Unknown area'}
+                    </Text>
+                    <Text style={styles.complaintMeta}>
+                      Reported {item?.reportedAgo || 'just now'}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyComplaintState}>
+                <Text style={styles.emptyComplaintText}>No recent complaints 🎉</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Report Truck Issue Button */}
+        <View style={styles.section}>
+          <TouchableOpacity 
+            style={styles.reportTruckButton}
+            onPress={handleReportTruckIssue}
+            activeOpacity={0.8}
+          >
+            <Truck size={20} color="#FFFFFF" />
+            <Text style={styles.reportTruckButtonText}>Report Truck Issue</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
-      {/* Truck Issue Reporting Modal */}
+      {/* Report Truck Issue Modal */}
       <Modal
-        visible={showIssueModal}
-        transparent={true}
+        visible={isReportModalVisible}
         animationType="slide"
-        onRequestClose={() => setShowIssueModal(false)}
+        transparent={true}
+        onRequestClose={handleCloseModal}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={handleCloseModal}
+          />
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Report Truck Issue</Text>
-              <TouchableOpacity
-                onPress={() => setShowIssueModal(false)}
-                style={styles.closeButton}
-              >
-                <Text style={styles.closeButtonText}>✕</Text>
+              <TouchableOpacity onPress={handleCloseModal}>
+                <Text style={styles.modalCloseButton}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalSubtitle}>
-              Describe the issue with your collection truck. This will notify affected residents and admin.
-            </Text>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Issue Type *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g., Engine problem, Flat tire, Brake issue"
+                  value={issueType}
+                  onChangeText={setIssueType}
+                  placeholderTextColor="#999"
+                />
+              </View>
 
-            <TextInput
-              style={styles.issueInput}
-              placeholder="e.g., Engine won't start, flat tire, mechanical breakdown..."
-              value={issueDescription}
-              onChangeText={setIssueDescription}
-              multiline={true}
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Description *</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Please provide details about the issue..."
+                  value={issueDescription}
+                  onChangeText={setIssueDescription}
+                  multiline
+                  numberOfLines={5}
+                  textAlignVertical="top"
+                  placeholderTextColor="#999"
+                />
+              </View>
+            </ScrollView>
 
-            <View style={styles.modalButtons}>
+            <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => {
-                  setShowIssueModal(false);
-                  setIssueDescription('');
-                }}
+                onPress={handleCloseModal}
+                disabled={isSubmitting}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
-                style={[styles.modalButton, styles.submitButton]}
-                onPress={handleReportIssue}
-                disabled={reportingIssue || !issueDescription.trim()}
+                style={[styles.modalButton, styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+                onPress={handleSubmitIssue}
+                disabled={isSubmitting}
               >
-                {reportingIssue ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                {isSubmitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.submitButtonText}>Report Issue</Text>
+                  <Text style={styles.submitButtonText}>Submit Report</Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#f8f9fa' },
   container: { flex: 1, backgroundColor: '#f8f9fa' },
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16, backgroundColor: '#fff',
-    borderBottomWidth: 1, borderBottomColor: '#e0e0e0', position: 'absolute', top: 0, left: 0, right: 0,
-    zIndex: 1000, elevation: 5,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 17,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
-  scrollView: { flex: 1, marginTop: 81 },
-  logoContainer: { flexDirection: 'row', alignItems: 'center' },
-  logoText: { fontSize: 24, fontWeight: 'bold', color: '#458A3D' },
-  truckIcon: { marginLeft: 8 },
-  truckEmoji: { fontSize: 20 },
+  scrollView: { flex: 1, backgroundColor: '#f8f9fa' },
+  scrollContent: {
+    paddingBottom: 100,
+  },
+  logoContainer: {
+    height: 40,
+  },
+  logo: {
+    height: 40,
+    width: 80,
+    resizeMode: 'contain',
+  },
   profileContainer: { position: 'relative' },
-  profileCircle: {
-    width: 45, height: 45, borderRadius: 22.5, borderWidth: 2, borderColor: '#8BC500', overflow: 'hidden', backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center',
+  profilePic: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
-  profileImage: { width: '100%', height: '100%', borderRadius: 20 },
-  onlineIndicator: { position: 'absolute', bottom: 2, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: '#4CAF50', borderWidth: 2, borderColor: '#fff' },
-  greetingSection: { paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff' },
+  greetingSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#fff',
+    marginTop: 12,
+  },
   greeting: { fontSize: 24, fontWeight: 'bold', color: '#333', marginBottom: 8 },
   routeInfo: { flexDirection: 'row', alignItems: 'center' },
   routeText: { fontSize: 14, color: '#666', marginLeft: 4 },
-  startRouteSection: { marginTop: 16, alignItems: 'center' },
-  startRouteText: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 16, lineHeight: 20 },
-  startRouteButton: { width: '80%', borderRadius: 12, backgroundColor: '#4CAF50', paddingVertical: 12 },
-  startRouteButtonText: { fontSize: 16, fontWeight: '600', color: '#fff' },
-  reportIssueButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF4444', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginTop: 12, alignSelf: 'flex-start' },
-  reportIssueText: { color: '#fff', fontSize: 14, fontWeight: '600', marginLeft: 6 },
   section: { paddingHorizontal: 20, paddingVertical: 16 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: '#458A3D', marginBottom: 12 },
+  liveRouteCard: {
+    backgroundColor: '#E8F5E8',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  liveRouteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  liveRouteTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginLeft: 8,
+  },
+  liveRouteText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  reportTruckButton: {
+    backgroundColor: '#458A3D',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  reportTruckButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
   quickActionGrid: { flexDirection: 'row', justifyContent: 'space-between' },
   quickActionCard: { width: '48%', backgroundColor: '#E3F2E8', padding: 16, borderRadius: 12, alignItems: 'center' },
   quickActionNumber: { fontSize: 32, fontWeight: 'bold', color: '#458A3D', marginTop: 8 },
   quickActionLabel: { fontSize: 12, color: '#666', marginTop: 4, textAlign: 'center' },
   scheduleList: { gap: 8 },
   scheduleItem: { 
-    backgroundColor: '#E8F5E8', 
+    backgroundColor: '#FFFFFF', 
     borderRadius: 12, 
     padding: 16, 
     flexDirection: 'row', 
@@ -984,11 +919,11 @@ const styles = StyleSheet.create({
     borderColor: '#1B5E20'
   },
   scheduleTimeContainer: { flexDirection: 'column', alignItems: 'flex-start', marginRight: 16, minWidth: 110 },
-  scheduleTime: { fontSize: 14, color: '#458A3D', fontWeight: 'bold', marginBottom: 2 },
+  scheduleTime: { fontSize: 14, color: '#000000', fontWeight: 'bold', marginBottom: 2 },
   scheduleTimeCollected: { color: '#E8F5E8' },
-  scheduleRoute: { fontSize: 12, color: '#666', marginTop: 2, fontWeight: '500' },
+  scheduleRoute: { fontSize: 12, color: '#000000', marginTop: 2, fontWeight: '500' },
   scheduleRouteCollected: { color: '#C8E6C9' },
-  areaIndex: { fontSize: 10, color: '#888', marginTop: 1, fontStyle: 'italic' },
+  areaIndex: { fontSize: 10, color: '#000000', marginTop: 1, fontStyle: 'italic' },
   areaIndexCollected: { color: '#A5D6A7' },
   scheduleLocationContainer: { flex: 1, alignItems: 'flex-start' },
   locationHeader: { 
@@ -1015,9 +950,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold', 
     marginLeft: 4 
   },
-  scheduleType: { fontSize: 14, color: '#666', marginBottom: 2 },
+  scheduleType: { fontSize: 14, color: '#000000', marginBottom: 2 },
   scheduleTypeCollected: { color: '#C8E6C9' },
-  scheduleFrequency: { fontSize: 12, color: '#666', fontStyle: 'italic' },
+  scheduleFrequency: { fontSize: 12, color: '#000000', fontStyle: 'italic' },
   scheduleFrequencyCollected: { color: '#A5D6A7' },
   collectedTime: { 
     fontSize: 11, 
@@ -1051,83 +986,145 @@ const styles = StyleSheet.create({
   dropdownMenu: { position: 'absolute', top: 60, right: 0, backgroundColor: '#fff', borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 5, zIndex: 2000, minWidth: 150 },
   dropdownItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#eee' },
   dropdownText: { fontSize: 16, color: '#333' },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
+  complaintCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
-    marginHorizontal: 20,
-    width: '90%',
-    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+    gap: 16,
+  },
+  complaintTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  complaintRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  complaintIndicator: {
+    width: 4,
+    borderRadius: 4,
+    alignSelf: 'stretch',
+  },
+  complaintInfo: {
+    flex: 1,
+  },
+  complaintText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  complaintMeta: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  emptyComplaintState: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  emptyComplaintText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 6,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    paddingBottom: Platform.OS === 'ios' ? 20 : 0,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#111827',
   },
-  closeButton: {
-    padding: 4,
+  modalCloseButton: {
+    fontSize: 24,
+    color: '#6B7280',
+    fontWeight: '300',
   },
-  closeButtonText: {
-    fontSize: 18,
-    color: '#666',
-    fontWeight: 'bold',
+  modalBody: {
+    padding: 20,
+    maxHeight: 400,
   },
-  modalSubtitle: {
+  formGroup: {
+    marginBottom: 20,
+  },
+  label: {
     fontSize: 14,
-    color: '#666',
-    marginBottom: 16,
-    lineHeight: 20,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
   },
-  issueInput: {
+  input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#D1D5DB',
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    minHeight: 100,
-    textAlignVertical: 'top',
-    marginBottom: 20,
+    color: '#111827',
+    backgroundColor: '#FFFFFF',
   },
-  modalButtons: {
+  textArea: {
+    height: 120,
+    paddingTop: 12,
+  },
+  modalFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
     gap: 12,
   },
   modalButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelButton: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#F3F4F6',
   },
   cancelButtonText: {
-    color: '#666',
     fontSize: 16,
     fontWeight: '600',
+    color: '#374151',
   },
   submitButton: {
-    backgroundColor: '#FF4444',
+    backgroundColor: '#458A3D',
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
   },
   submitButtonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
-
-

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Lock, User } from 'lucide-react-native';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image as RNImage, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image as RNImage, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '../components/ThemedText';
 import InputField from '../components/ui/InputField';
 import PrimaryButton from '../components/ui/PrimaryButton';
@@ -16,8 +16,8 @@ function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const { login: collectorLogin } = useCollectorAuth();
   const { login: residentLogin } = useResidentAuth();
+  const { login: collectorLogin } = useCollectorAuth();
 
   const handleCollectorLogin = async () => {
     if (!firstName || !password) {
@@ -27,14 +27,14 @@ function LoginScreen() {
     
     setLoading(true);
     try {
-      // Try resident login first via auth context (stores resident in AsyncStorage + context)
+      // Try resident login first using the auth hook
       try {
-        const res = await residentLogin(firstName, password);
-        Alert.alert('Success', `Welcome, ${res.first_name || firstName}!`);
+        const residentData = await residentLogin(firstName, password);
+        Alert.alert('Success', `Welcome, ${residentData.first_name}!`);
         router.replace('/resident');
         return;
-      } catch (_) {
-        // fall through to collector login
+      } catch (residentError) {
+        console.log('Resident login failed, trying collector login:', residentError.message);
       }
 
       // Fall back to collector login
@@ -46,6 +46,10 @@ function LoginScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleForgotPassword = () => {
+    router.push('/forgot-password');
   };
 
   return (
@@ -78,6 +82,10 @@ function LoginScreen() {
           onIconPress={() => setShowPassword((v) => !v)}
           style={styles.input}
         />
+        
+        <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordContainer}>
+          <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+        </TouchableOpacity>
       
         <PrimaryButton onPress={handleCollectorLogin} style={styles.button} disabled={loading}>
           {loading ? (
@@ -159,6 +167,16 @@ const styles = StyleSheet.create({
   },
   linkText: {
     color: '#87CEEB',
+  },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-end',
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  forgotPasswordText: {
+    color: '#8BC500',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
 

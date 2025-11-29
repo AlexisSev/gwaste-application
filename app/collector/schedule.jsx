@@ -180,7 +180,7 @@ export default function ScheduleScreen() {
       <View style={styles.monthDisplay}><Text style={styles.monthText}>{getWeekDates()[0].fullDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</Text></View>
       <View style={styles.weekSelector}>
         <TouchableOpacity onPress={handlePrev} style={styles.arrowBtn}>
-          <Feather name="chevron-left" size={20} color="#fff" />
+          <Feather name="chevron-left" size={16} color="#fff" />
         </TouchableOpacity>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daysContainer}>
           {weekDays.map((d) => (
@@ -192,10 +192,13 @@ export default function ScheduleScreen() {
           ))}
         </ScrollView>
         <TouchableOpacity onPress={handleNext} style={styles.arrowBtn}>
-          <Feather name="chevron-right" size={20} color="#fff" />
+          <Feather name="chevron-right" size={16} color="#fff" />
         </TouchableOpacity>
       </View>
-      <ScrollView style={styles.timeline} contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView
+        style={styles.timeline}
+        contentContainerStyle={styles.timelineContent}
+      >
         {todaySchedule.map((item, idx) => (
           <View key={idx} style={styles.timelineRow}>
             <View style={styles.timelineCol}>
@@ -209,6 +212,10 @@ export default function ScheduleScreen() {
                     <View style={styles.cardInfo}>
                       <View style={styles.cardHeader}>
                         <Text style={styles.cardLocation}>{item.location}</Text>
+                        <View style={styles.statusBadge}>
+                          <View style={styles.statusDot} />
+                          <Text style={styles.statusText}>Scheduled</Text>
+                        </View>
                       </View>
                       <View style={styles.cardDetails}>
                         <View style={styles.detailRow}>
@@ -228,10 +235,6 @@ export default function ScheduleScreen() {
                           </View>
                         )}
                       </View>
-                    </View>
-                    <View style={styles.statusBadge}>
-                      <View style={styles.statusDot} />
-                      <Text style={styles.statusText}>Scheduled</Text>
                     </View>
                   </View>
                 </ThemedView>
@@ -274,7 +277,7 @@ const styles = StyleSheet.create({
   monthDisplay: { 
     paddingHorizontal: 24, 
     paddingBottom: 8, 
-    backgroundColor: '#fff', 
+    backgroundColor: '#F8F9FA', 
     borderBottomWidth: 1, 
     borderBottomColor: '#e0e0e0', 
     alignItems: 'center' 
@@ -297,9 +300,9 @@ const styles = StyleSheet.create({
     minHeight: 70 
   },
   arrowBtn: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 22, 
+    width: 32, 
+    height: 32, 
+    borderRadius: 16, 
     backgroundColor: '#8BC500', 
     alignItems: 'center', 
     justifyContent: 'center', 
@@ -358,18 +361,22 @@ const styles = StyleSheet.create({
   },
   timeline: { 
     flex: 1, 
-    backgroundColor: '#F4F8EC', 
+    backgroundColor: '#F8F9FA', 
     paddingHorizontal: 0 
+  },
+  timelineContent: {
+    paddingBottom: 160,
   },
   timelineRow: { 
     flexDirection: 'row', 
     alignItems: 'flex-start', 
     marginVertical: 12, 
-    marginLeft: 24 
+    marginLeft: 20 
   },
   timelineCol: { 
     alignItems: 'center', 
-    width: 60 
+    width: 56,
+    marginRight: 12
   },
   timelineDot: { 
     width: 18, 
@@ -387,26 +394,28 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   timelineTime: { 
-    fontSize: 13, 
+    fontSize: 11, 
     color: '#666', 
     fontWeight: '600',
     marginTop: 2 
   },
   timelineCardCol: { 
     flex: 1, 
-    paddingRight: 24 
+    paddingRight: 16 
   },
   card: { 
     backgroundColor: '#fff', 
     borderRadius: 16, 
-    padding: 20, 
+    padding: 16, 
+    paddingRight: 20,
     marginBottom: 8, 
     shadowColor: '#000', 
     shadowOpacity: 0.08, 
     shadowRadius: 8, 
     elevation: 4,
     borderLeftWidth: 4,
-    borderLeftColor: '#8BC500'
+    borderLeftColor: '#8BC500',
+    minHeight: 100
   },
   cardContent: {
     position: 'relative'
@@ -419,27 +428,24 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 12,
-    position: 'relative'
+    gap: 8
   },
   cardLocation: { 
     color: '#333', 
-    fontSize: 18, 
+    fontSize: 14, 
     fontWeight: 'bold',
     flex: 1,
-    marginRight: 12
+    flexWrap: 'wrap'
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E8F5E8',
-    paddingHorizontal: -10,
-    paddingVertical: 3,
-    borderRadius: 16,
-    minWidth: 80,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
     justifyContent: 'center',
-    position: 'absolute',
-    top: -15,
-    right: -15
+    flexShrink: 0
   },
   statusDot: {
     width: 6,
@@ -450,7 +456,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     color: '#8BC500',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600'
   },
   cardDetails: {

@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 
@@ -40,6 +41,12 @@ export const ResidentAuthProvider = ({ children }) => {
       throw new Error('Please enter both first name and password.');
     }
 
+    // Hash the input password for comparison
+    const hashedPassword = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      pwd
+    );
+
     // Case-insensitive fetch, then verify password client-side
     const { data, error } = await supabase
       .from('residents')
@@ -51,7 +58,16 @@ export const ResidentAuthProvider = ({ children }) => {
     let match = null;
     if (Array.isArray(data)) {
       const fl = first.toLowerCase();
-      match = data.find(r => String(r.first_name || '').trim().toLowerCase() === fl && String(r.password || '').trim() === pwd) || null;
+      match = data.find(r => {
+        const dbName = String(r.first_name || '').trim().toLowerCase();
+        const dbPwd = String(r.password || '').trim();
+
+        // Check if names match
+        if (dbName !== fl) return false;
+
+        // Check password - try both plain text and hashed for backward compatibility
+        return dbPwd === pwd || dbPwd === hashedPassword;
+      });
     }
 
     if (!match) {

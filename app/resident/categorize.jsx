@@ -1,15 +1,18 @@
 import { Feather } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from '../../hooks/useColorScheme';
+import { useResidentAuth } from '../../hooks/useResidentAuth';
 
 export default function CategorizeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const { resident } = useResidentAuth();
 
   // Grid icons/images
   const categoryImages = {
@@ -98,9 +101,25 @@ export default function CategorizeScreen() {
   ];
 
   const [selectedId, setSelectedId] = useState(null);
+  const [isDropdownVisible, setIsDropdownVisible] = useState(false);
 
   const handlePressCategory = (id) => {
     setSelectedId(id);
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout Confirmation',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: () => router.push('/login'),
+        },
+      ]
+    );
   };
 
   const selectedCategory = categories.find((c) => c.id === selectedId);
@@ -122,6 +141,50 @@ export default function CategorizeScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: '#f5f5f5' }]}>
       <StatusBar style="auto" />
+
+      <View style={styles.header}>
+        <View style={styles.logoContainer}>
+          <Image
+            source={require('../../assets/images/logo.png')}
+            style={styles.logo}
+          />
+        </View>
+        <TouchableOpacity
+          style={styles.profileContainer}
+          onPress={() => setIsDropdownVisible(prev => !prev)}
+        >
+          <Image
+            source={resident?.profile_image_base64 ? { uri: resident.profile_image_base64 } : require('../../assets/images/icon.png')}
+            style={styles.profilePic}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {isDropdownVisible && (
+        <View style={styles.dropdownMenu}>
+          <TouchableOpacity
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/resident/profile');
+            }}
+          >
+            <Text style={styles.dropdownText}>Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/resident/settings');
+            }}
+          >
+            <Text style={styles.dropdownText}>Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
+            <Text style={styles.dropdownText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Show header ONLY when no category is selected */}
       {!selectedId && (
@@ -229,6 +292,54 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  logoContainer: {
+    height: 40,
+  },
+  logo: {
+    height: 40,
+    width: 80,
+    resizeMode: 'contain',
+  },
+  profileContainer: {
+    position: 'relative',
+  },
+  profilePic: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 80,
+    right: 20,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 2000,
+    minWidth: 150,
+  },
+  dropdownItem: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#333',
+  },
   hero: {
     backgroundColor: HERO_BG,
     paddingHorizontal: 20,
@@ -266,6 +377,7 @@ const styles = StyleSheet.create({
   gridContainer: {
     paddingHorizontal: 20,
     paddingTop: 14,
+    paddingBottom: 140,
   },
   gridItem: {
     width: '48%',
@@ -296,7 +408,7 @@ const styles = StyleSheet.create({
   detailWrapper: {
     flex: 1,
   },
-  detailContainer: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 20 },
+  detailContainer: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 160 },
   detailHeader: {
     flexDirection: 'row',
     alignItems: 'center',

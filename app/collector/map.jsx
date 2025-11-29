@@ -247,7 +247,7 @@ export default function CollectorMapScreen() {
 
       <View style={styles.floatingCard}>
         <View style={styles.areaContainer}>
-          <View style={styles.currentAreaCard}>
+          <View style={styles.areaColumn}>
             <Text style={styles.areaTitle}>Current Area</Text>
             {currentArea ? (
               <View>
@@ -261,8 +261,8 @@ export default function CollectorMapScreen() {
               <Text style={styles.noAreaText}>No current area</Text>
             )}
           </View>
-          
-          <View style={styles.nextAreaCard}>
+
+          <View style={styles.areaColumn}>
             <Text style={styles.areaTitle}>Next Area</Text>
             {nextArea ? (
               <View>
@@ -283,7 +283,7 @@ export default function CollectorMapScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#ffffff' },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -296,30 +296,39 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   mapContainer: {
+    flex: 1,
     marginHorizontal: 0,
     marginTop: 0,
     borderRadius: 0,
     overflow: 'hidden',
-    elevation: 5,
-    backgroundColor: '#ffffff',
   },
   webview: { ...StyleSheet.absoluteFillObject },
   placeholder: { flex: 1, backgroundColor: '#f2f2f2' },
   floatingCard: {
-    marginHorizontal: 16,
-    marginTop: 12,
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 110,
     padding: 16,
-    borderRadius: 12,
-    backgroundColor: 'white',
-    elevation: 3,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 20,
   },
   areaContainer: {
     flexDirection: 'row',
     gap: 12,
+  },
+  areaColumn: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
   },
   currentAreaCard: {
     flex: 1,
@@ -340,28 +349,28 @@ const styles = StyleSheet.create({
   areaTitle: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#000000',
     marginBottom: 8,
   },
   areaName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: '#000000',
     marginBottom: 4,
   },
   areaTime: {
     fontSize: 12,
-    color: '#666',
+    color: '#000000',
     marginBottom: 2,
   },
   areaRoute: {
     fontSize: 11,
-    color: '#888',
+    color: '#000000',
     fontStyle: 'italic',
   },
   noAreaText: {
     fontSize: 14,
-    color: '#999',
+    color: '#000000',
     fontStyle: 'italic',
   },
 });

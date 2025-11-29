@@ -4,6 +4,11 @@
  * Static coordinates for known areas in the garbage collection system
  * These coordinates are used for geocoding and routing within Bogo City
  */
+/**
+ * Truck marker configuration
+ */
+import truckIcon from '../assets/images/truck-icon.png';
+
 export const AREA_COORDINATES = {
   // Route 1 Areas - Precise Coordinates
   'Don Pedro': { lat: 11.06278, lng: 123.97209 },
@@ -57,12 +62,13 @@ export const AREA_COORDINATES = {
 
 /**
  * Bogo City geographical bounds for constraining searches and routing
+ * Expanded to cover all route areas including ARAPAL Farm and eastern areas
  */
 export const BOGO_CITY_BOUNDS = {
-  north: 11.08,   // Northernmost point (approx)
-  south: 11.01,   // Southernmost point (approx)
-  east: 124.01,   // Easternmost point (approx)
-  west: 123.95,   // Westernmost point (approx)
+  north: 11.08,   // Northernmost point
+  south: 10.95,   // Southernmost point (covers ARAPAL Farm at 10.99)
+  east: 124.05,   // Easternmost point (covers Route 4 & 6 eastern areas)
+  west: 123.85,   // Westernmost point (covers Route 3 western areas)
 };
 
 /**
@@ -79,20 +85,22 @@ export const DEFAULT_LOCATION = {
  * Geofence radius in meters - defines the area around a destination
  * where the collector is considered to have "entered" the collection zone
  */
-export const GEOFENCE_RADIUS_METERS = 1000;
+export const GEOFENCE_RADIUS_METERS = 500;
 
 /**
- * GPS tracking configuration
+ * GPS tracking configuration - Optimized for data usage
  */
 export const GPS_CONFIG = {
-  // Update interval in milliseconds
-  timeInterval: 2000, // 2 seconds
-  // Distance interval in meters (0 = update on any movement)
-  distanceInterval: 0,
+  // Update interval in milliseconds (increased to reduce data usage)
+  timeInterval: 5000, // 5 seconds (reduced from 2s to save data)
+  // Distance interval in meters (0 = update on any movement, or set minimum distance)
+  distanceInterval: 0, // Set to 0 to allow all updates (can be increased to 5-10m for production)
   // Maximum number of breadcrumb trail points to keep
   maxPathPoints: 300,
   // Delay between position updates in milliseconds
   updateDelay: 100,
+  // Database update interval (update DB less frequently than GPS tracking)
+  dbUpdateInterval: 10000, // Update database every 10 seconds (reduces Supabase calls)
 };
 
 /**
@@ -137,13 +145,10 @@ export const MAP_STYLES = {
   },
 };
 
-/**
- * Truck marker configuration
- */
 export const TRUCK_MARKER = {
-  emoji: '🚛',
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
+  iconUrl: truckIcon,
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
 };
 
 /**
@@ -157,11 +162,16 @@ export const DESTINATION_MARKER = {
 };
 
 /**
- * OpenStreetMap tile layer configuration
+ * OpenStreetMap tile layer configuration - Optimized for data usage
  */
 export const OSM_TILE_LAYER = {
   url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   attribution: '',
+  // Tile caching options to reduce data usage
+  maxZoom: 18, // Limit max zoom to reduce high-res tile downloads
+  minZoom: 10, // Limit min zoom
+  // Cache tiles for longer (browser default is usually 24h, we'll rely on that)
+  // Note: Leaflet automatically caches tiles in browser cache
 };
 
 /**
@@ -271,7 +281,7 @@ export const NOMINATIM_CONFIG = {
   baseUrl: 'https://nominatim.openstreetmap.org/search',
   userAgent: 'gwaste-app/1.0 (educational)',
   searchSuffix: ', Bogo City, Cebu, Philippines',
-  // Bogo City bounds for more accurate geocoding
+  // Bogo City bounds for more accurate geocoding (expanded to cover all routes)
   viewbox: `${BOGO_CITY_BOUNDS.west},${BOGO_CITY_BOUNDS.south},${BOGO_CITY_BOUNDS.east},${BOGO_CITY_BOUNDS.north}`,
   bounded: 1, // Restrict results to viewbox
 };

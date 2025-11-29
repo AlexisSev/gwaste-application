@@ -4,16 +4,16 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
@@ -67,8 +67,8 @@ export default function CollectorProfileScreen() {
           crew: crewData,
         });
         // Load profile image if exists
-        if (collector.profile_image_base64) {
-          setProfileImage(collector.profile_image_base64);
+        if (collector.profile_image) {
+          setProfileImage(collector.profile_image);
         }
         setLoading(false);
       } else {
@@ -115,8 +115,8 @@ export default function CollectorProfileScreen() {
           crew: crewData,
         });
         // Load profile image if exists
-        if (data.profile_image_base64) {
-          setProfileImage(data.profile_image_base64);
+        if (data.profile_image) {
+          setProfileImage(data.profile_image);
         }
       }
     } catch (error) {
@@ -177,7 +177,7 @@ export default function CollectorProfileScreen() {
       // Update collector profile with base64 image
       const { error: updateError } = await supabase
         .from('collectors')
-        .update({ profile_image_base64: base64Image })
+        .update({ profile_image: base64Image })
         .eq('id', collector.id)
         .select();
 

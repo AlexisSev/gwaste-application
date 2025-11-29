@@ -1,10 +1,10 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import * as Location from 'expo-location';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,8 +12,7 @@ import { useResidentAuth } from '../../hooks/useResidentAuth';
 import { supabase } from '../../services/supabaseClient';
 
 export default function ResidentIndex() {
-  const params = useLocalSearchParams();
-  const { resident } = useResidentAuth();
+  const { resident, loading: authLoading } = useResidentAuth();
   const [residentData, setResidentData] = useState(null);
   const [isDropdownVisible, setIsDropdownVisible] = useState(false);
   const [scheduleData, setScheduleData] = useState(null);
@@ -26,7 +25,6 @@ export default function ResidentIndex() {
   const [userLocation, setUserLocation] = useState(null);
   const [nearestDistanceKm, setNearestDistanceKm] = useState(null);
   const [distanceLoading, setDistanceLoading] = useState(true);
-  const [profileImage, setProfileImage] = useState(null);
 
   const formatTime = (timeString) => {
     if (!timeString) return '';
@@ -110,18 +108,24 @@ export default function ResidentIndex() {
       );
       
     } catch (error) {
-      console.error('Error loading collection status:', error);
+      const rawMessage = typeof error?.message === 'string' ? error.message : String(error);
+      const looksLikeHtml = rawMessage.trim().startsWith('<!');
+      const friendlyMessage = looksLikeHtml
+        ? 'Unexpected response from server while loading collection status.'
+        : rawMessage;
+      console.warn('Error loading collection status:', friendlyMessage);
     }
   };
 
   // Load notifications for the resident's area
   const loadNotifications = async () => {
     try {
-      if (!residentData?.purok) return;
+      const purok = resident?.purok || residentData?.purok;
+      if (!purok) return;
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('area', residentData.purok);
+        .eq('area', purok);
       if (error) throw error;
       const list = (data || []).map(n => ({ ...n }));
       list.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
@@ -284,17 +288,18 @@ export default function ResidentIndex() {
         const allPickups = [];
         const todaySchedule = [];
         const today = new Date();
+        const residentPurok = resident?.purok || residentData?.purok || '';
         
         (routes || []).forEach(data => {
           // console.log('Route data:', data);
           // console.log('Route areas:', data.areas);
-          // console.log('Resident purok:', residentData?.purok);
+          // console.log('Resident purok:', residentPurok);
           
           // Check if this route includes the resident's area
           if (data.areas && data.areas.some(area => 
             area && (
               area.toLowerCase().includes('malata') || 
-              area.toLowerCase().includes(residentData?.purok?.toLowerCase() || '') ||
+              area.toLowerCase().includes(residentPurok.toLowerCase()) ||
               data.type?.toLowerCase().includes('malata')
             )
           )) {
@@ -386,40 +391,21 @@ export default function ResidentIndex() {
     const loadResidentData = async () => {
       try {
         setLoading(true);
-        // Prefer auth context resident if available
-        if (resident && (resident.first_name || resident.resident_address)) {
-          setResidentData({
-            firstName: resident.first_name || null,
-            purok: resident.purok || null,
-            address: resident.resident_address || resident.address || null,
-          });
-          
-          // Load profile image if available
-          if (resident.profile_image_base64) {
-            setProfileImage(resident.profile_image_base64);
-          } else if (resident.id) {
-            // Fetch from database if not in context
-            const { data: residentProfile, error: profileError } = await supabase
-              .from('residents')
-              .select('profile_image_base64')
-              .eq('id', resident.id)
-              .single();
-            
-            if (!profileError && residentProfile?.profile_image_base64) {
-              setProfileImage(residentProfile.profile_image_base64);
-            }
-          }
-        } else if (params.firstName && params.purok && params.address) {
-          // Fallback to params (legacy)
-          setResidentData({
-            firstName: params.firstName,
-            purok: params.purok,
-            address: params.address
-          });
+
+        // Load resident data from auth context
+        if (resident) {
+          const data = {
+            firstName: resident.first_name || '',
+            purok: resident.purok || '',
+            address: resident.resident_address || resident.address || ''
+          };
+          setResidentData(data);
+
+          // Fetch collection schedule data after setting resident data
+          await fetchCollectionSchedule();
+        } else {
+          console.log('No resident data available');
         }
-        
-        // Fetch collection schedule data
-        await fetchCollectionSchedule();
       } catch (error) {
         console.error('Error loading resident data:', error);
         Alert.alert('Error', 'Could not load resident data');
@@ -428,8 +414,25 @@ export default function ResidentIndex() {
       }
     };
 
-    loadResidentData();
-  }, [resident?.id, resident?.first_name, params.firstName, params.purok, params.address]);
+    if (!authLoading && resident) {
+      loadResidentData();
+    } else if (!authLoading && !resident) {
+      setLoading(false);
+      console.log('Auth completed but no resident found');
+    }
+  }, [resident, authLoading]);
+
+  // Update residentData when resident changes (for profile updates)
+  useEffect(() => {
+    if (resident && !loading) {
+      const data = {
+        firstName: resident.first_name || '',
+        purok: resident.purok || '',
+        address: resident.resident_address || resident.address || ''
+      };
+      setResidentData(data);
+    }
+  }, [resident?.first_name, resident?.purok, resident?.resident_address, resident?.address]);
 
   // Load collection status when schedule is available
   useEffect(() => {
@@ -440,23 +443,35 @@ export default function ResidentIndex() {
 
   // Load notifications when resident data is available
   useEffect(() => {
-    let unsubscribe;
-    if (residentData?.purok) {
-      loadNotifications().then(unsub => {
-        unsubscribe = unsub;
-      });
+    const purok = resident?.purok || residentData?.purok;
+    if (purok) {
+      loadNotifications();
     }
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [residentData?.purok]);
+  }, [resident?.purok, residentData?.purok]);
 
   // Handle loading state
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
-          <Text>Loading...</Text>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Handle no resident data
+  if (!resident && !authLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>No resident data found</Text>
+          <TouchableOpacity 
+            style={styles.viewDetailsButton}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.viewDetailsText}>Go to Login</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -469,6 +484,26 @@ export default function ResidentIndex() {
     if (hour < 18) return 'Good Afternoon';
     return 'Good Evening';
   };
+
+  const today = new Date();
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay());
+  const nextPickupDateString = scheduleData?.fullDate
+    ? new Date(scheduleData.fullDate).toDateString()
+    : null;
+
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(startOfWeek);
+    date.setDate(startOfWeek.getDate() + index);
+    const dateString = date.toDateString();
+    return {
+      key: date.toISOString(),
+      label: date.toLocaleDateString('en-US', { weekday: 'short' }),
+      dateNumber: date.getDate(),
+      isToday: dateString === today.toDateString(),
+      isPickup: nextPickupDateString ? dateString === nextPickupDateString : false,
+    };
+  });
 
   const handleLogout = () => {
     Alert.alert(
@@ -488,8 +523,16 @@ export default function ResidentIndex() {
     );
   };
 
-  // Prefer name from auth context, then local state, then URL params
-  const displayName = (resident?.first_name || residentData?.firstName || params.firstName || 'Resident');
+  const handleNotificationPress = () => {
+    if (!notifications?.length) {
+      Alert.alert('Notifications', 'You are all caught up!');
+    } else {
+      Alert.alert(
+        'Notifications',
+        `You have ${notifications.length} new notification${notifications.length > 1 ? 's' : ''}.`
+      );
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -500,18 +543,25 @@ export default function ResidentIndex() {
             style={styles.logo}
           />
         </View>
-        <TouchableOpacity 
-          style={styles.profileContainer}
-          onPress={() => setIsDropdownVisible(!isDropdownVisible)}
-        >
-          <View style={styles.profileCircle}>
-            <Image 
-              source={profileImage ? { uri: profileImage } : require('../../assets/images/icon.png')} 
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.notificationButton}
+            onPress={handleNotificationPress}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="notifications-outline" size={22} color="#8BC500" />
+            {notifications?.length > 0 && <View style={styles.notificationDot} />}
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.profileContainer}
+            onPress={() => setIsDropdownVisible(!isDropdownVisible)}
+          >
+            <Image
+              source={resident?.profile_image_base64 ? { uri: resident.profile_image_base64 } : require('../../assets/images/icon.png')}
               style={styles.profilePic}
             />
-            <View style={styles.onlineIndicator} />
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {isDropdownVisible && (
@@ -534,20 +584,6 @@ export default function ResidentIndex() {
           >
             <Text style={styles.dropdownText}>Settings</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.dropdownItem}
-            onPress={() => {
-              setIsDropdownVisible(false);
-              router.push('/resident/notifications');
-            }}
-          >
-            <View style={styles.notificationRow}>
-              <Text style={styles.dropdownText}>Notifications</Text>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{Array.isArray(notifications) ? (notifications.length > 99 ? '99+' : (notifications.length > 9 ? '9+' : notifications.length)) : 0}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
           <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
             <Text style={styles.dropdownText}>Logout</Text>
           </TouchableOpacity>
@@ -556,6 +592,7 @@ export default function ResidentIndex() {
 
       <ScrollView 
         style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.content}>
@@ -584,7 +621,7 @@ export default function ResidentIndex() {
                     const now = new Date();
                     const currentTime = now.getHours() * 60 + now.getMinutes(); // Current time in minutes
                     
-                    const estimatedTime = getEstimatedTimeForArea(scheduleData, residentData?.purok);
+                    const estimatedTime = getEstimatedTimeForArea(scheduleData, resident?.purok || residentData?.purok);
                     
                     // If it's today's collection
                     if (scheduleData?.daysDiff === 0) {
@@ -650,6 +687,56 @@ export default function ResidentIndex() {
             </View>
           </View>
 
+        {/* Weekly Calendar */}
+        <View style={styles.calendarCard}>
+          <View style={styles.calendarHeader}>
+            <View>
+              <Text style={styles.calendarMonth}>
+                {today.toLocaleDateString('en-US', { month: 'long' })}
+              </Text>
+              <Text style={styles.calendarYear}>{today.getFullYear()}</Text>
+            </View>
+          </View>
+          <View style={styles.calendarWeekRow}>
+            {weekDays.map((day) => (
+              <View key={day.key} style={styles.calendarDay}>
+                <Text
+                  style={[
+                    styles.calendarDayLabel,
+                    day.isToday && styles.calendarDayLabelToday,
+                  ]}
+                >
+                  {day.label}
+                </Text>
+                <View
+                  style={[
+                    styles.calendarDateBubble,
+                    day.isPickup && !day.isToday && styles.calendarDateBubblePickup,
+                    day.isToday && styles.calendarDateBubbleToday,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.calendarDateText,
+                      day.isToday && styles.calendarDateTextToday,
+                    ]}
+                  >
+                    {day.dateNumber}
+                  </Text>
+                  {day.isPickup && day.isToday && (
+                    <View style={styles.calendarPickupDot} />
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
+          {scheduleData && (
+            <Text style={styles.calendarFooter}>
+              Next pickup on {scheduleData.date} • Route {scheduleData.routeNumber || '—'}
+            </Text>
+          )}
+        </View>
+
           {/* Feature Cards Grid */}
           <View style={styles.featureCardsGrid}>
             {/* Truck Location Card */}
@@ -665,13 +752,7 @@ export default function ResidentIndex() {
             </TouchableOpacity>
 
             {/* Announcements Card */}
-            <TouchableOpacity style={styles.featureCard}>
-              <View style={[styles.featureIconContainer, styles.announcementIcon]}>
-                <Feather name="alert-triangle" size={20} color="#FFA500" />
-              </View>
-              <Text style={styles.featureTitle}>Announcements</Text>
-              <Text style={styles.featureDescription}>Heavy rain delay</Text>
-            </TouchableOpacity>
+            
 
             {/* Eco Tip Card */}
             <TouchableOpacity 
@@ -692,14 +773,14 @@ export default function ResidentIndex() {
           </TouchableOpacity> */}
         </View>
       </ScrollView>
-      {/* Floating Android chatbot icon */}
-      <TouchableOpacity
-        style={styles.chatbotFab}
+      
+      {/* Floating Chatbot Button */}
+      <TouchableOpacity 
+        style={styles.floatingChatButton}
         onPress={() => router.push('/resident/GwasteChatbot')}
-        accessibilityRole="button"
-        accessibilityLabel="Open chatbot"
+        activeOpacity={0.8}
       >
-        <FontAwesome5 name="android" size={22} color="#ffffff" />
+        <FontAwesome5 name="robot" size={24} color="#ffffff" />
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -727,34 +808,47 @@ const styles = StyleSheet.create({
     width: 80,
     resizeMode: 'contain',
   },
-  profileContainer: {
-    position: 'relative'
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  profileCircle: {
-    position: 'relative',
-    width: 40,
-    height: 40,
-  },
-  profilePic: {
+  notificationButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
+    backgroundColor: '#F3F6EF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
   },
-  onlineIndicator: {
+  notificationDot: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#8BC500',
-    borderWidth: 2,
-    borderColor: '#fff',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF6B6B',
+  },
+  profileContainer: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    overflow: 'hidden',
+  },
+  profilePic: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 17,
   },
   scrollView: {
     flex: 1,
     marginTop: 4,
     backgroundColor: '#f8f9fa'
+  },
+  scrollContent: {
+    paddingBottom: 100,
   },
   content: {
     flex: 1,
@@ -763,7 +857,7 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#4CAF50',
+    color: '#0f0f0f',
     marginBottom: 8,
   },
   locationContainer: {
@@ -869,42 +963,6 @@ const styles = StyleSheet.create({
   dropdownText: {
     fontSize: 16,
     color: '#333'
-  },
-  notificationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
-  },
-  badge: {
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#EF4444',
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700'
-  },
-  chatbotFab: {
-    position: 'absolute',
-    right: 18,
-    bottom: 24,
-    backgroundColor: '#22c55e',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    zIndex: 1500
   },
   scheduleContainer: {
     backgroundColor: '#fff',
@@ -1022,18 +1080,17 @@ const styles = StyleSheet.create({
     marginTop: 4 
   },
   loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    marginVertical: 8
+    backgroundColor: '#f8f9fa',
   },
   loadingText: {
-    marginLeft: 8,
-    color: '#666',
-    fontSize: 14
+    fontSize: 18,
+    color: '#333',
+    fontWeight: '600',
+    marginBottom: 16,
   },
   // New Homepage Styles
   headerSection: {
@@ -1098,6 +1155,101 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  calendarCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  calendarMonth: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  calendarYear: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  calendarLink: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#E8F5E8',
+  },
+  calendarLinkText: {
+    color: '#2F855A',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  calendarWeekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  calendarDay: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  calendarDayLabel: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginBottom: 6,
+  },
+  calendarDayLabelToday: {
+    color: '#2F855A',
+    fontWeight: '600',
+  },
+  calendarDateBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  calendarDateBubbleToday: {
+    backgroundColor: '#2F855A',
+  },
+  calendarDateBubblePickup: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 2,
+    borderColor: '#F6AD55',
+  },
+  calendarDateText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  calendarDateTextToday: {
+    color: '#fff',
+  },
+  calendarFooter: {
+    fontSize: 13,
+    color: '#4B5563',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  calendarPickupDot: {
+    position: 'absolute',
+    bottom: 6,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FBBF24',
   },
   featureCardsGrid: {
     flexDirection: 'row',
@@ -1169,5 +1321,25 @@ const styles = StyleSheet.create({
     color: '#8BC500',
     marginLeft: 6,
     fontWeight: '500',
+  },
+  floatingChatButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#8BC500',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
   }
 });

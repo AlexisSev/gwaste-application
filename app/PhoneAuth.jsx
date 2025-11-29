@@ -1,7 +1,8 @@
 /* eslint-disable no-unused-vars */
 import { Feather } from "@expo/vector-icons";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import { useState, useEffect } from "react";
+import * as Crypto from "expo-crypto";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -13,13 +14,31 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
-import { vw } from "../utils/responsive";
 import { ThemedText } from "../components/ThemedText";
 import InputField from "../components/ui/InputField";
 import PrimaryButton from "../components/ui/PrimaryButton";
-import * as Crypto from "expo-crypto";
-import { sendOtpSMS, generateOTP, verifyOtpCode } from "../services/otpService.js";
+import { generateOTP, sendOtpSMS, verifyOtpCode } from "../services/otpService.js";
 import { supabase } from "../services/supabaseClient";
+
+// Helper function to format phone numbers consistently
+const formatPhoneNumber = (value = "") => {
+  try {
+    if (!value || typeof value !== "string") return null;
+    const digits = value.replace(/\D/g, "");
+    if (!digits) return null;
+
+    let normalized = digits;
+    if (normalized.startsWith("0")) normalized = "63" + normalized.substring(1);
+    else if (normalized.length === 10) normalized = "63" + normalized; // assume local 10-digit
+    else if (!normalized.startsWith("63")) normalized = `63${normalized}`;
+
+    const e164 = `+${normalized}`;
+    return /^\+63\d{10}$/.test(e164) ? e164 : null;
+  } catch (_err) {
+    return null;
+  }
+};
+import { vw } from "../utils/responsive";
 
 export const options = {
   headerShown: false,
@@ -57,52 +76,42 @@ export default function PhoneAuth() {
       );
     }
 
-    // Confirm before sending OTP
-    Alert.alert(
-      "Confirm Phone Number",
-      `We will send a verification code to:\n\n${phone}\n\nIs this correct?`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Send OTP",
-          onPress: async () => {
-            setSending(true);
+    setSending(true);
 
-            try {
-              // Check if phone number is already registered
-              const { data: existingUser } = await supabase
-                .from("residents")
-                .select("phone_number")
-                .eq("phone_number", phone)
-                .single();
+    try {
+      // Format phone number for consistent storage and lookup
+      const formattedPhone = formatPhoneNumber(phone);
+      if (!formattedPhone) {
+        Alert.alert("Invalid Phone Number", "Please enter a valid Philippine mobile number");
+        return;
+      }
 
-              if (existingUser) {
-                Alert.alert(
-                  "Phone Number Already Registered",
-                  "This phone number is already registered. Please log in instead."
-                );
-                setSending(false);
-                return;
-              }
+      // Check if phone number is already registered
+      const { data: existingUser } = await supabase
+        .from("residents")
+        .select("phone_number")
+        .eq("phone_number", formattedPhone)
+        .single();
 
-              const otpCode = generateOTP();
-              const ok = await sendOtpSMS(phone, otpCode);
-              if (ok) {
-                setTimer(120); // 2 minutes
-                Alert.alert("OTP Sent", "Please check your phone for the verification code.");
-              }
-            } catch (err) {
-              Alert.alert("Error", err.message || "Failed to send OTP");
-            } finally {
-              setSending(false);
-            }
-          }
-        }
-      ]
-    );
+      if (existingUser) {
+        Alert.alert(
+          "Phone Number Already Registered",
+          "This phone number is already registered. Please log in instead."
+        );
+        return;
+      }
+
+      const otpCode = generateOTP();
+      const ok = await sendOtpSMS(phone, otpCode);
+      if (ok) {
+        setTimer(120); // 2 minutes
+        Alert.alert("OTP Sent", "Please check your phone for the verification code.");
+      }
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to send OTP");
+    } finally {
+      setSending(false);
+    }
   };
 
   // Verify OTP & insert into residents table
@@ -111,14 +120,21 @@ export default function PhoneAuth() {
     setVerifying(true);
 
     try {
+      // Format phone number for consistent storage and lookup
+      const formattedPhone = formatPhoneNumber(phone);
+      if (!formattedPhone) {
+        Alert.alert("Invalid Phone Number", "Please enter a valid Philippine mobile number");
+        return;
+      }
+
       const { success, message } = await verifyOtpCode(phone, otp);
       if (!success) return Alert.alert("OTP Error", message);
 
-      // Check if phone number already exists
+      // Check if phone number already exists (using formatted phone)
       const { data: existingUser, error: checkError } = await supabase
         .from("residents")
         .select("phone_number")
-        .eq("phone_number", phone)
+        .eq("phone_number", formattedPhone)
         .single();
 
       if (existingUser) {
@@ -140,7 +156,7 @@ export default function PhoneAuth() {
           last_name,
           resident_address,
           purok,
-          phone_number: phone,
+          phone_number: formattedPhone,
           password: hashedPassword,
         },
       ]);
