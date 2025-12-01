@@ -117,21 +117,60 @@ export default function ResidentIndex() {
     }
   };
 
-  // Load notifications for the resident's area
+  // Load notifications for the resident by user_id using RPC function to bypass RLS
   const loadNotifications = async () => {
     try {
-      const purok = resident?.purok || residentData?.purok;
-      if (!purok) return;
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('area', purok);
-      if (error) throw error;
+      const residentId = resident?.id;
+      if (!residentId) {
+        console.log('⚠️ No resident ID available for loading notifications');
+        return;
+      }
+      
+      console.log('📬 Loading notifications for resident:', residentId);
+      
+      // Try RPC function first (bypasses RLS)
+      let data = null;
+      let error = null;
+      
+      try {
+        const result = await supabase.rpc('get_resident_notifications', {
+          p_user_id: residentId,
+          p_limit: 50
+        });
+        data = result.data;
+        error = result.error;
+      } catch (rpcError) {
+        console.warn('⚠️ RPC function not available, trying direct query:', rpcError);
+        // Fallback to direct query (may be blocked by RLS)
+        const result = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', residentId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        data = result.data;
+        error = result.error;
+      }
+      
+      if (error) {
+        console.error('❌ Error loading notifications:', error);
+        console.error('❌ Error details:', JSON.stringify(error, null, 2));
+        // If RLS error, suggest running the migration
+        if (error.code === 'PGRST202' || error.message?.includes('schema cache')) {
+          console.error('💡 Tip: Make sure to run the migration: 20250130_create_get_notifications_function.sql');
+        }
+        throw error;
+      }
+      
       const list = (data || []).map(n => ({ ...n }));
-      list.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
-      setNotifications(list.slice(0, 10));
+      console.log(`✅ Loaded ${list.length} notifications for resident`);
+      if (list.length > 0) {
+        console.log('📋 Sample notification:', list[0]);
+      }
+      setNotifications(list);
     } catch (error) {
       console.error('Error loading notifications:', error);
+      setNotifications([]);
     }
   };
 
@@ -400,9 +439,9 @@ export default function ResidentIndex() {
             address: resident.resident_address || resident.address || ''
           };
           setResidentData(data);
-
+        
           // Fetch collection schedule data after setting resident data
-          await fetchCollectionSchedule();
+        await fetchCollectionSchedule();
         } else {
           console.log('No resident data available');
         }
@@ -415,7 +454,7 @@ export default function ResidentIndex() {
     };
 
     if (!authLoading && resident) {
-      loadResidentData();
+    loadResidentData();
     } else if (!authLoading && !resident) {
       setLoading(false);
       console.log('Auth completed but no resident found');
@@ -441,13 +480,35 @@ export default function ResidentIndex() {
     }
   }, [todaysSchedule]);
 
-  // Load notifications when resident data is available
+  // Load notifications when resident is available
   useEffect(() => {
-    const purok = resident?.purok || residentData?.purok;
-    if (purok) {
+    if (resident?.id) {
       loadNotifications();
+      
+      // Set up real-time subscription for new notifications
+      const channel = supabase
+        .channel('notifications_changes')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${resident.id}`
+          },
+          (payload) => {
+            console.log('🔔 New notification received:', payload.new);
+            // Reload notifications when a new one is inserted
+            loadNotifications();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
-  }, [resident?.purok, residentData?.purok]);
+  }, [resident?.id]);
 
   // Handle loading state
   if (authLoading || loading) {
@@ -524,15 +585,63 @@ export default function ResidentIndex() {
   };
 
   const handleNotificationPress = () => {
+    const unreadCount = notifications?.filter(n => !n.is_read)?.length || 0;
+    
     if (!notifications?.length) {
       Alert.alert('Notifications', 'You are all caught up!');
-    } else {
-      Alert.alert(
-        'Notifications',
-        `You have ${notifications.length} new notification${notifications.length > 1 ? 's' : ''}.`
-      );
+      return;
     }
+    
+    // Show notifications list
+    const unreadNotifications = notifications.filter(n => !n.is_read);
+    const readNotifications = notifications.filter(n => n.is_read);
+    
+    if (unreadNotifications.length === 0) {
+      Alert.alert('Notifications', 'You have no new notifications.');
+      return;
+    }
+    
+    // Create a formatted list of notifications
+    const notificationList = unreadNotifications
+      .slice(0, 5)
+      .map((notif, idx) => {
+        const date = notif.created_at ? new Date(notif.created_at).toLocaleString() : 'Just now';
+        return `${idx + 1}. ${notif.title}\n   ${notif.message}\n   ${date}`;
+      })
+      .join('\n\n');
+    
+    const moreText = unreadNotifications.length > 5 
+      ? `\n\n...and ${unreadNotifications.length - 5} more notification${unreadNotifications.length - 5 > 1 ? 's' : ''}`
+      : '';
+    
+    Alert.alert(
+      `Notifications (${unreadCount} new)`,
+      notificationList + moreText,
+      [
+        {
+          text: 'Mark All as Read',
+          onPress: async () => {
+            // Mark all unread notifications as read
+            const unreadIds = unreadNotifications.map(n => n.notification_id);
+            if (unreadIds.length > 0) {
+              const { error } = await supabase
+                .from('notifications')
+                .update({ is_read: true })
+                .in('notification_id', unreadIds);
+              
+              if (!error) {
+                loadNotifications(); // Reload to update the badge
+              }
+            }
+          }
+        },
+        { text: 'OK' }
+      ]
+    );
   };
+  
+  // Calculate unread notification count
+  const unreadNotificationCount = notifications?.filter(n => !n.is_read)?.length || 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -550,13 +659,19 @@ export default function ResidentIndex() {
             activeOpacity={0.85}
           >
             <Ionicons name="notifications-outline" size={22} color="#8BC500" />
-            {notifications?.length > 0 && <View style={styles.notificationDot} />}
+            {unreadNotificationCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.profileContainer}
             onPress={() => setIsDropdownVisible(!isDropdownVisible)}
           >
-            <Image
+            <Image 
               source={resident?.profile_image_base64 ? { uri: resident.profile_image_base64 } : require('../../assets/images/icon.png')}
               style={styles.profilePic}
             />
@@ -822,14 +937,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     position: 'relative',
   },
-  notificationDot: {
+  notificationBadge: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#FF6B6B',
+    top: 4,
+    right: 4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   profileContainer: {
     width: 34,

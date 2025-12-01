@@ -44,10 +44,10 @@ const ReportIssue = ({ navigation }) => {
       return;
     }
 
-    if (images.length >= 3) {
+    if (images.length >= 1) {
       showMessage({
         message: "Image Limit",
-        description: "Maximum 3 images allowed",
+        description: "Maximum 1 image allowed",
         type: "warning",
       });
       return;
@@ -100,6 +100,7 @@ const ReportIssue = ({ navigation }) => {
           description: description.trim(),
           report_type: issueType,
           status: "pending",
+          location: resident?.resident_address || '',
           images_base64: imageData, // Store base64 images directly
           created_at: new Date().toISOString(),
         },
@@ -110,7 +111,7 @@ const ReportIssue = ({ navigation }) => {
       // Show success alert
       Alert.alert(
         "Report Submitted Successfully! ✓",
-        "Your issue has been reported and will be reviewed by our team within 24 hours.",
+        "Your issue has been reported and will be reviewed by our team within 24 hours. You can track the status of your report in your profile.",
         [
           {
             text: "OK",
@@ -228,29 +229,29 @@ const ReportIssue = ({ navigation }) => {
 
         {/* Image Upload Section */}
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Add Images</Text>
+          <Text style={styles.label}>Add Images (Optional)</Text>
           <Text style={styles.helpText}>
-            Upload up to 3 photos to support your issue report
+            Upload 1 photo to support your issue report
           </Text>
           <TouchableOpacity
             style={[
               styles.imagePickButton,
               loading && styles.disabledButton,
-              images.length >= 3 && styles.maxImagesButton
+              images.length >= 1 && styles.maxImagesButton
             ]}
             onPress={pickImage}
-            disabled={loading || images.length >= 3}
+            disabled={loading || images.length >= 1}
           >
             <Ionicons
               name="camera-outline"
               size={24}
-              color={images.length >= 3 ? "#A1A5A7" : "#8BC500"}
+              color={images.length >= 1 ? "#A1A5A7" : "#8BC500"}
             />
             <Text style={[
               styles.imagePickButtonText,
-              images.length >= 3 && styles.maxImagesText
+              images.length >= 1 && styles.maxImagesText
             ]}>
-              {images.length >= 3 ? "Max Images Added" : "Add Image"}
+              {images.length >= 1 ? "Image Added" : "Add Image"}
             </Text>
           </TouchableOpacity>
 
@@ -414,7 +415,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 2,
     borderColor: "#E8E8E8",
-    marginBottom: 8,
   },
   imagePreview: {
     width: "100%",
@@ -506,3 +506,6 @@ const styles = StyleSheet.create({
 });
 
 export default ReportIssue;
+
+
+

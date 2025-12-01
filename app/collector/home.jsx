@@ -6,6 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
+import { sendIprogSMS } from '../../services/otpService';
 import { supabase } from '../../services/supabaseClient';
 
 export default function LandingScreen() {
@@ -166,46 +167,528 @@ export default function LandingScreen() {
   };
 
   // Mark area as collected (append to areas_collected text[] for today's record)
-  const markAreaAsCollected = async (area, routeNumber) => {
+  const markAreaAsCollected = async (area, routeNumber, routeId) => {
     try {
+      // Validate routeId - ensure it's a valid UUID string
+      const validRouteId = routeId && typeof routeId === 'string' && routeId.trim() !== '' ? routeId.trim() : null;
+      
+      // Debug: Log routeId to verify it's being passed
+      console.log('Marking area as collected:', { 
+        area, 
+        routeNumber, 
+        routeId: routeId, 
+        validRouteId: validRouteId,
+        routeIdType: typeof routeId,
+        collectorId: collector?.id
+      });
+      
+      if (!validRouteId) {
+        console.warn('⚠️ WARNING: routeId is missing or invalid:', routeId);
+      }
+      
+      // Fetch route type from routes table to use as waste_type
+      let routeType = null;
+      if (validRouteId) {
+        try {
+          const { data: routeData, error: routeError } = await supabase
+            .from('routes')
+            .select('type')
+            .eq('id', validRouteId)
+            .single();
+          
+          if (!routeError && routeData?.type) {
+            routeType = routeData.type; // e.g., "Dili Malata", "MALATA"
+            console.log('📋 Route type fetched:', routeType);
+          } else if (routeError) {
+            console.warn('⚠️ Could not fetch route type:', routeError);
+          }
+        } catch (err) {
+          console.warn('⚠️ Error fetching route type:', err);
+        }
+      }
+      
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
 
       // 1) Fetch existing row for this collector and date
-      const { data: existing, error: fetchErr } = await supabase
-        .from('collections')
-        .select('id, areas_collected')
-        .eq('collector_id', collector?.id)
-        .eq('collected_date', today)
-        .maybeSingle();
-      if (fetchErr && fetchErr.code !== 'PGRST116') throw fetchErr;
+      // Check for existing collection with same route_id if provided, otherwise just by collector and date
+      let existing = null;
+      if (validRouteId) {
+        const { data: existingWithRoute, error: fetchErr1 } = await supabase
+          .from('collections')
+          .select('id, areas_collected, route_id')
+          .eq('collector_id', collector?.id)
+          .eq('collected_date', today)
+          .eq('route_id', validRouteId)
+          .maybeSingle();
+        if (fetchErr1 && fetchErr1.code !== 'PGRST116') throw fetchErr1;
+        existing = existingWithRoute;
+      }
+      
+      // If no existing row with route_id, check for any row for this collector and date
+      if (!existing) {
+        const { data: existingAny, error: fetchErr2 } = await supabase
+          .from('collections')
+          .select('id, areas_collected, route_id')
+          .eq('collector_id', collector?.id)
+          .eq('collected_date', today)
+          .maybeSingle();
+        if (fetchErr2 && fetchErr2.code !== 'PGRST116') throw fetchErr2;
+        existing = existingAny;
+      }
 
       if (!existing) {
         // 2) Insert a new row with this area
-        const { error: insertErr } = await supabase
+        const locationString = currentLocation && currentLocation.latitude && currentLocation.longitude
+          ? `${currentLocation.latitude},${currentLocation.longitude}`
+          : null;
+        
+        const insertData = {
+          collector_id: collector?.id,
+          collector_name: collector?.firstName || collector?.driver,
+          collected_date: today,
+          areas_collected: [area],
+          route_id: validRouteId, // Use route_id for triggers (null if not provided)
+          collected_at: new Date().toISOString(),
+          location: locationString,
+          status: 'completed',
+          collection_type: 'manual', // Manual collection method
+          waste_type: routeType || null // Waste type from routes.type (e.g., "Dili Malata", "MALATA")
+        };
+        
+        console.log('📝 Inserting collection:', {
+          route_id: insertData.route_id,
+          area: insertData.areas_collected,
+          collector_id: insertData.collector_id,
+          waste_type: insertData.waste_type,
+          collection_type: insertData.collection_type
+        });
+        
+        const { data: insertedData, error: insertErr } = await supabase
           .from('collections')
-          .insert({
-            collector_id: collector?.id,
-            collector_name: collector?.firstName || collector?.driver,
-            collected_date: today,
-            areas_collected: [area],
-            route_number: routeNumber,
-            collected_at: new Date().toISOString(),
-            location: currentLocation,
-            status: 'completed',
-            collectionType: 'manual',
-            timestamp: Date.now()
-          });
-        if (insertErr) throw insertErr;
+          .insert(insertData)
+          .select('id, route_id, areas_collected, waste_type, collection_type');
+        
+        if (insertErr) {
+          console.error('❌ Error inserting collection:', insertErr);
+          console.error('❌ Insert data that failed:', JSON.stringify(insertData, null, 2));
+          throw insertErr;
+        }
+        
+        const insertedRow = Array.isArray(insertedData) ? insertedData[0] : insertedData;
+        
+        console.log('✅ Collection inserted successfully:', {
+          id: insertedRow?.id,
+          route_id: insertedRow?.route_id,
+          areas_collected: insertedRow?.areas_collected,
+          waste_type: insertedRow?.waste_type,
+          collection_type: insertedRow?.collection_type
+        });
+        
+        // Verify route_id was actually saved
+        if (validRouteId && !insertedRow?.route_id) {
+          console.error('⚠️ WARNING: route_id was not saved on insert! Expected:', validRouteId, 'Got:', insertedRow?.route_id);
+          
+          // Retry update after insert
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const { error: retryInsertErr } = await supabase
+            .from('collections')
+            .update({ route_id: validRouteId })
+            .eq('id', insertedRow?.id);
+          
+          if (retryInsertErr) {
+            console.error('❌ Retry insert update failed:', retryInsertErr);
+          } else {
+            console.log('✅ Retry insert update sent');
+            // Verify again
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const { data: verifyInsert } = await supabase
+              .from('collections')
+              .select('route_id')
+              .eq('id', insertedRow?.id)
+              .single();
+            if (verifyInsert) {
+              console.log('✅ Insert verification after retry:', verifyInsert);
+            }
+          }
+        } else if (validRouteId && insertedRow?.route_id === validRouteId) {
+          console.log('✅ route_id saved correctly on insert:', validRouteId);
+        }
       } else {
         // 3) Update existing row, append if not present
         const current = Array.isArray(existing.areas_collected) ? existing.areas_collected : [];
-        if (!current.includes(area)) {
-          const updated = [...current, area];
-          const { error: updateErr } = await supabase
+        
+        // Normalize area names for comparison (trim and case-insensitive)
+        const normalizedArea = String(area || '').trim();
+        const normalizedCurrent = current.map(a => String(a || '').trim());
+        
+        // Check if area already exists (case-insensitive and trimmed)
+        const areaExists = normalizedCurrent.some(
+          existingArea => existingArea.toLowerCase() === normalizedArea.toLowerCase()
+        );
+        
+        console.log('🔍 Checking if area exists:', {
+          rawArea: area,
+          normalizedArea: normalizedArea,
+          currentAreas: current,
+          normalizedCurrent: normalizedCurrent,
+          areaExists: areaExists,
+          existingId: existing.id,
+          existingRouteId: existing.route_id
+        });
+        
+        // Debug: Log the exact area name being passed
+        console.log('🔍 Area name analysis:', {
+          original: area,
+          type: typeof area,
+          length: area?.length,
+          normalized: normalizedArea,
+          normalizedLength: normalizedArea.length,
+          charCodes: normalizedArea.split('').map(c => c.charCodeAt(0))
+        });
+        
+        if (!areaExists) {
+          // Use the normalized area name (trimmed) - but preserve original if it exists in routes
+          // Try to match against routes table to get exact area name
+          let exactAreaName = normalizedArea;
+          
+          if (validRouteId) {
+            try {
+              const { data: routeData } = await supabase
+                .from('routes')
+                .select('areas')
+                .eq('id', validRouteId)
+                .single();
+              
+              if (routeData?.areas && Array.isArray(routeData.areas)) {
+                // Find the exact area name from routes table (case-insensitive match)
+                const matchedArea = routeData.areas.find(
+                  routeArea => String(routeArea || '').trim().toLowerCase() === normalizedArea.toLowerCase()
+                );
+                
+                if (matchedArea) {
+                  exactAreaName = String(matchedArea).trim();
+                  console.log('✅ Found exact area name in routes table:', {
+                    searched: normalizedArea,
+                    found: exactAreaName,
+                    allRoutesAreas: routeData.areas
+                  });
+                } else {
+                  console.warn('⚠️ Area not found in routes.areas, using normalized name:', {
+                    searched: normalizedArea,
+                    routesAreas: routeData.areas
+                  });
+                }
+              }
+            } catch (err) {
+              console.warn('⚠️ Could not fetch route areas for exact match:', err);
+            }
+          }
+          
+          // Use the exact area name from routes table if found, otherwise use normalized
+          const updatedAreas = [...current, exactAreaName];
+          
+          console.log('📝 Final area name to add:', {
+            original: area,
+            normalized: normalizedArea,
+            exactFromRoutes: exactAreaName,
+            willAdd: exactAreaName,
+            updatedAreas: updatedAreas
+          });
+          
+          console.log('📝 Preparing to update collection:', {
+            existing_id: existing.id,
+            current_areas: current,
+            new_area: normalizedArea,
+            updated_areas: updatedAreas,
+            route_id: validRouteId,
+            waste_type: routeType
+          });
+          
+          // Strategy: Use PostgreSQL array_append via RPC or update with explicit array handling
+          // The trigger might be interfering, so we'll try multiple approaches
+          
+          // Step 1: Update metadata first (route_id, waste_type, collection_type, collected_at)
+          // Update collected_at to current time when adding a new area
+          if (validRouteId || routeType) {
+            const metadataUpdate = {
+              route_id: validRouteId || existing.route_id,
+              waste_type: routeType || existing.waste_type,
+              collection_type: 'manual',
+              collected_at: new Date().toISOString() // Update timestamp when adding new area
+            };
+            
+            console.log('📝 Step 1: Updating metadata:', metadataUpdate);
+            
+            const { error: metadataErr } = await supabase
+              .from('collections')
+              .update(metadataUpdate)
+              .eq('id', existing.id);
+            
+            if (metadataErr) {
+              console.error('❌ Error updating metadata:', metadataErr);
+            } else {
+              console.log('✅ Metadata updated');
+            }
+            
+            // Wait for triggers
+            await new Promise(resolve => setTimeout(resolve, 400));
+          } else {
+            // Even if no route_id/routeType, still update collected_at and collection_type
+            const metadataUpdate = {
+              collection_type: 'manual',
+              collected_at: new Date().toISOString() // Update timestamp when adding new area
+            };
+            
+            const { error: metadataErr } = await supabase
+              .from('collections')
+              .update(metadataUpdate)
+              .eq('id', existing.id);
+            
+            if (metadataErr) {
+              console.error('❌ Error updating collected_at:', metadataErr);
+            } else {
+              console.log('✅ collected_at updated');
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 400));
+          }
+          
+          // Step 2: Use PostgreSQL function to safely append area (bypasses trigger issues)
+          console.log('📝 Step 2: Appending area using PostgreSQL function');
+          
+          try {
+            // Call the PostgreSQL function via RPC to safely append the area
+            const { error: rpcError } = await supabase.rpc('append_collection_area', {
+              p_collection_id: existing.id,
+              p_area_name: exactAreaName
+            });
+            
+            if (rpcError) {
+              console.warn('⚠️ RPC function not available, falling back to direct update:', rpcError);
+              
+              // Fallback: Direct update if RPC function doesn't exist
+              const { data: currentData } = await supabase
+                .from('collections')
+                .select('areas_collected')
+                .eq('id', existing.id)
+                .single();
+              
+              const currentAreasFromDb = currentData?.areas_collected || [];
+              const normalizedCurrentFromDb = currentAreasFromDb.map(a => String(a || '').trim().toLowerCase());
+              
+              if (!normalizedCurrentFromDb.includes(exactAreaName.toLowerCase())) {
+                const finalAreas = [...currentAreasFromDb, exactAreaName];
+                
+                const { error: areasErr } = await supabase
+                  .from('collections')
+                  .update({ 
+                    areas_collected: finalAreas,
+                    collected_at: new Date().toISOString() // Update timestamp when adding new area
+                  })
+                  .eq('id', existing.id);
+                
+                if (areasErr) {
+                  console.error('❌ Error updating areas_collected:', areasErr);
+                  throw areasErr;
+                }
+              }
+            } else {
+              console.log('✅ Area appended via RPC function');
+            }
+            
+            // Wait for database to process
+            await new Promise(resolve => setTimeout(resolve, 600));
+            
+            // Verify the area was added
+            const { data: verifyData } = await supabase
+              .from('collections')
+              .select('areas_collected')
+              .eq('id', existing.id)
+              .single();
+            
+            if (verifyData) {
+              const verifyNormalized = (verifyData.areas_collected || []).map(a => String(a || '').trim().toLowerCase());
+              const isIncluded = verifyNormalized.includes(exactAreaName.toLowerCase());
+              
+              if (!isIncluded) {
+                console.error('⚠️ Area still not added. Trigger may be interfering.');
+                console.error('Current areas in DB:', verifyData.areas_collected);
+                
+                // Last resort: Try direct update one more time
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                const { data: retryCurrent } = await supabase
+                  .from('collections')
+                  .select('areas_collected')
+                  .eq('id', existing.id)
+                  .single();
+                
+                if (retryCurrent) {
+                  const retryAreas = retryCurrent.areas_collected || [];
+                  const retryNormalized = retryAreas.map(a => String(a || '').trim().toLowerCase());
+                  
+                  if (!retryNormalized.includes(exactAreaName.toLowerCase())) {
+                    await supabase
+                      .from('collections')
+                      .update({ 
+                        areas_collected: [...retryAreas, exactAreaName],
+                        collected_at: new Date().toISOString() // Update timestamp when adding new area
+                      })
+                      .eq('id', existing.id);
+                  }
+                }
+              } else {
+                console.log('✅ Area successfully added:', exactAreaName);
+              }
+            }
+          } catch (err) {
+            console.error('❌ Error in Step 2:', err);
+            // Continue anyway - the area might still be added
+          }
+          
+          // Wait a moment for database to process, then verify
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // Fetch the updated row to verify everything was saved
+          const { data: fetchedRows, error: fetchErr } = await supabase
             .from('collections')
-            .update({ areas_collected: updated })
+            .select('id, route_id, areas_collected, waste_type, collection_type')
             .eq('id', existing.id);
-          if (updateErr) throw updateErr;
+          
+          if (fetchErr) {
+            console.warn('⚠️ Could not fetch updated row to verify:', fetchErr);
+          } else if (fetchedRows && fetchedRows.length > 0) {
+            const fetchedRow = fetchedRows[0];
+            console.log('✅ Collection updated successfully:', {
+              id: fetchedRow.id,
+              route_id: fetchedRow.route_id,
+              areas_collected: fetchedRow.areas_collected,
+              waste_type: fetchedRow.waste_type,
+              collection_type: fetchedRow.collection_type
+            });
+            
+            // Verify the new area was added (case-insensitive and trimmed comparison)
+            const normalizedFetched = (fetchedRow.areas_collected || []).map(a => String(a || '').trim().toLowerCase());
+            const normalizedAreaCheck = String(area || '').trim().toLowerCase();
+            const areaWasAdded = normalizedFetched.includes(normalizedAreaCheck);
+            
+            if (!areaWasAdded) {
+              console.error('⚠️ WARNING: New area was not added!', {
+                expected_area: area,
+                normalized_expected: normalizedAreaCheck,
+                current_areas: fetchedRow.areas_collected,
+                normalized_current: normalizedFetched
+              });
+            } else {
+              console.log('✅ New area added successfully:', {
+                area: area,
+                normalized: normalizedAreaCheck,
+                all_areas: fetchedRow.areas_collected
+              });
+            }
+            
+            // Verify waste_type was saved
+            if (routeType && fetchedRow.waste_type !== routeType) {
+              console.error('⚠️ WARNING: waste_type was not saved correctly! Expected:', routeType, 'Got:', fetchedRow.waste_type);
+            } else if (routeType && fetchedRow.waste_type === routeType) {
+              console.log('✅ waste_type saved correctly:', fetchedRow.waste_type);
+            }
+            
+            // Verify route_id was actually saved
+            if (validRouteId && !fetchedRow.route_id) {
+              console.error('⚠️ WARNING: route_id was not saved! Expected:', validRouteId, 'Got:', fetchedRow.route_id);
+              console.error('⚠️ This might indicate a database trigger or constraint issue');
+              
+              // Try one more time with a direct update (no select)
+              console.log('🔄 Retrying route_id update...');
+              const { error: retryErr } = await supabase
+                .from('collections')
+                .update({ route_id: validRouteId })
+                .eq('id', existing.id);
+              
+              if (retryErr) {
+                console.error('❌ Retry failed:', retryErr);
+              } else {
+                console.log('✅ Retry update sent, waiting for database...');
+                // Wait and verify again
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const { data: finalCheck } = await supabase
+                  .from('collections')
+                  .select('route_id, waste_type, areas_collected')
+                  .eq('id', existing.id);
+                if (finalCheck && finalCheck.length > 0) {
+                  console.log('✅ Final check after retry:', finalCheck[0]);
+                }
+              }
+            } else if (validRouteId && fetchedRow.route_id === validRouteId) {
+              console.log('✅ route_id verified and saved correctly:', validRouteId);
+              
+              // Double-check by querying database again after a delay
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              const { data: doubleCheck } = await supabase
+                .from('collections')
+                .select('route_id, waste_type, areas_collected, collection_type, id')
+                .eq('id', existing.id)
+                .single();
+              
+              if (doubleCheck) {
+                if (doubleCheck.route_id === validRouteId) {
+                  console.log('✅ Double-check confirmed: route_id is saved in database:', doubleCheck.route_id);
+                  console.log('✅ Double-check - waste_type:', doubleCheck.waste_type);
+                  console.log('✅ Double-check - areas_collected:', doubleCheck.areas_collected);
+                  console.log('✅ Double-check - collection_type:', doubleCheck.collection_type);
+                  
+                  // Verify the new area was added (case-insensitive and trimmed comparison)
+                  const normalizedDoubleCheck = (doubleCheck.areas_collected || []).map(a => String(a || '').trim().toLowerCase());
+                  const normalizedAreaDoubleCheck = String(area || '').trim().toLowerCase();
+                  const areaWasAddedDouble = normalizedDoubleCheck.includes(normalizedAreaDoubleCheck);
+                  
+                  if (!areaWasAddedDouble) {
+                    console.error('⚠️ WARNING: New area was not added in double-check!', {
+                      expected_area: area,
+                      normalized_expected: normalizedAreaDoubleCheck,
+                      current_areas: doubleCheck.areas_collected,
+                      normalized_current: normalizedDoubleCheck
+                    });
+                  } else {
+                    console.log('✅ New area confirmed in double-check:', {
+                      area: area,
+                      normalized: normalizedAreaDoubleCheck,
+                      all_areas: doubleCheck.areas_collected
+                    });
+                  }
+                } else {
+                  console.error('❌ Double-check FAILED: route_id was cleared! Expected:', validRouteId, 'Got:', doubleCheck.route_id);
+                  console.error('❌ This indicates a database trigger or constraint is clearing route_id');
+                }
+              }
+            } else if (validRouteId && fetchedRow.route_id !== validRouteId) {
+              console.error('⚠️ WARNING: route_id mismatch! Expected:', validRouteId, 'Got:', fetchedRow.route_id);
+            }
+          } else {
+            console.warn('⚠️ No rows returned from verification query');
+          }
+        } else {
+          // Area already collected, but update route_id and waste_type if they're missing
+          if (validRouteId && !existing.route_id) {
+            const updateData = {
+              route_id: validRouteId
+            };
+            
+            // Also update waste_type if we have route type
+            if (routeType) {
+              updateData.waste_type = routeType;
+            }
+            
+            const { error: updateErr } = await supabase
+              .from('collections')
+              .update(updateData)
+              .eq('id', existing.id);
+            if (updateErr) {
+              console.warn('Error updating route_id/waste_type:', updateErr);
+            } else {
+              console.log('✅ Updated route_id and waste_type for existing collection:', { route_id: validRouteId, waste_type: routeType });
+            }
+          }
         }
       }
 
@@ -220,10 +703,40 @@ export default function LandingScreen() {
       );
 
       await notifyResidents(area, 'collected');
+      
 
     } catch (error) {
       console.error('Error marking area as collected:', error);
     }
+  };
+
+  // Manual collection button handler
+  const handleManualCollection = async (area, routeNumber, routeId) => {
+    // Debug: Log what's being passed
+    console.log('🔘 Manual collection clicked:', { area, routeNumber, routeId, routeIdType: typeof routeId });
+    
+    if (!routeId) {
+      console.warn('⚠️ WARNING: routeId is missing when marking area as collected!', { area, routeNumber });
+    }
+    
+    Alert.alert(
+      'Mark as Collected',
+      `Are you sure you want to mark ${area} as collected?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark Collected',
+          onPress: async () => {
+            try {
+              await markAreaAsCollected(area, routeNumber, routeId);
+              Alert.alert('Success', `${area} has been marked as collected and saved to database!`);
+            } catch (error) {
+              Alert.alert('Error', `Failed to mark area as collected: ${error.message}`);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleReportTruckIssue = () => {
@@ -271,18 +784,150 @@ export default function LandingScreen() {
   // Notify residents when truck enters/leaves geofence
   const notifyResidents = async (area, status) => {
     try {
-      const { error } = await supabase
-        .from('notifications')
-        .insert({
-          area: area,
-          status: status,
-          collector_id: collector?.id,
-          timestamp: new Date().toISOString(),
-          message: status === 'approaching' 
+      const notifications = [];
+      
+      console.log(`🔔 Notifying residents for area: "${area}", status: "${status}"`);
+      
+      // Get residents in the area to notify them (include phone_number for SMS)
+      // Match by both purok and resident_address to ensure we find all relevant residents
+      const { data: residents, error: residentsError } = await supabase
+        .from('residents')
+        .select('id, phone_number, purok, resident_address')
+        .or(`purok.ilike.%${area}%,resident_address.ilike.%${area}%`);
+      
+      if (residentsError) {
+        console.error('❌ Error fetching residents:', residentsError);
+        // Continue to send admin notification even if resident fetch fails
+      } else {
+        console.log(`📋 Found ${residents?.length || 0} residents for area "${area}"`);
+        
+        if (residents && residents.length > 0) {
+          // Log found residents for debugging
+          console.log('📋 Residents found:', residents.map(r => ({
+            id: r.id,
+            purok: r.purok,
+            resident_address: r.resident_address,
+            has_phone: !!r.phone_number
+          })));
+          
+          const title = status === 'approaching' 
+            ? 'Truck Approaching' 
+            : 'Collection Completed';
+          
+          const message = status === 'approaching' 
             ? `Waste collection truck is approaching ${area}` 
-            : `Waste collection completed in ${area}`
-        });
-      if (error) throw error;
+            : `Waste collection completed in ${area}`;
+
+          // Create notifications for all residents in the area
+          // Use resident.id as user_id (foreign key references residents.id)
+          residents.forEach(resident => {
+            if (resident.id) {
+              notifications.push({
+                user_id: resident.id, // Use id directly as it's the foreign key reference
+                title: title,
+                message: message,
+                area: area,
+                is_read: false,
+                created_at: new Date().toISOString()
+              });
+            } else {
+              console.warn('⚠️ Skipping resident without id:', resident);
+            }
+          });
+          
+          console.log(`📝 Prepared ${notifications.length} notifications to insert`);
+          
+          // Send SMS notifications to residents when collection is completed
+          if (status === 'collected') {
+            try {
+              // Get all valid phone numbers from residents
+              const phoneNumbers = residents
+                .map(resident => resident.phone_number)
+                .filter(phone => phone && phone.trim() !== '');
+
+              if (phoneNumbers.length > 0) {
+                const smsMessage = `Hello! Waste collection has been completed in ${area}. Thank you for your cooperation! - G-Waste App`;
+                
+                // Send SMS via IPROGSMS
+                const smsResult = await sendIprogSMS(smsMessage, phoneNumbers);
+                
+                if (smsResult.success) {
+                  console.log(`✅ SMS notifications sent to ${phoneNumbers.length} residents in ${area}`);
+                } else {
+                  console.error('❌ Failed to send SMS notifications to residents:', smsResult.error);
+                }
+              } else {
+                console.log(`⚠️ No valid phone numbers found for residents in ${area}`);
+              }
+            } catch (smsError) {
+              console.error('Error sending SMS notifications to residents:', smsError);
+              // Don't throw - we still want to continue with in-app notifications
+            }
+          }
+        } else {
+          console.log(`⚠️ No residents found for area "${area}". Check if purok or resident_address matches.`);
+        }
+      }
+
+      // Insert resident notifications using RPC function to bypass RLS
+      if (notifications.length > 0) {
+        console.log(`💾 Inserting ${notifications.length} notifications into database...`);
+        console.log('📋 Sample notification:', notifications[0]);
+        
+        // Use RPC function to insert notifications (bypasses RLS)
+        const insertPromises = notifications.map(notification => 
+          supabase.rpc('insert_resident_notification', {
+            p_user_id: notification.user_id,
+            p_title: notification.title,
+            p_message: notification.message,
+            p_area: notification.area || null
+          })
+        );
+        
+        const results = await Promise.allSettled(insertPromises);
+        const successful = results.filter(r => r.status === 'fulfilled' && !r.value.error).length;
+        const failed = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error)).length;
+        
+        if (failed > 0) {
+          console.error(`❌ Failed to insert ${failed} out of ${notifications.length} notifications`);
+          results.forEach((result, index) => {
+            if (result.status === 'rejected' || (result.status === 'fulfilled' && result.value.error)) {
+              console.error(`❌ Failed notification ${index + 1}:`, 
+                result.status === 'rejected' ? result.reason : result.value.error);
+            }
+          });
+        }
+        
+        if (successful > 0) {
+          console.log(`✅ Successfully inserted ${successful} resident notifications`);
+        }
+      } else {
+        console.log('⚠️ No notifications to insert (no residents found or no valid user_ids)');
+      }
+
+      // ALWAYS send admin notification to admin_notifications table
+      // This should be sent regardless of whether residents are found
+      const adminNotification = {
+        title: status === 'approaching' 
+          ? 'Truck Approaching Area' 
+          : 'Area Collection Completed',
+        message: status === 'approaching'
+          ? `${collector?.firstName || collector?.driver || 'Collector'} is approaching ${area}`
+          : `${collector?.firstName || collector?.driver || 'Collector'} has completed collection in ${area}`,
+        read: false,
+        created_at: new Date().toISOString()
+      };
+
+      const { error: adminError } = await supabase
+        .from('admin_notifications')
+        .insert([adminNotification]);
+      
+      if (adminError) {
+        console.error('Error inserting admin notification:', adminError);
+        // Don't throw - we still want to continue even if admin notification fails
+      } else {
+        console.log('✅ Admin notification sent successfully');
+      }
     } catch (error) {
       console.error('Error sending notification:', error);
     }
@@ -326,7 +971,7 @@ export default function LandingScreen() {
               
               // Mark as collected after a short delay (simulating collection time)
               setTimeout(async () => {
-                await markAreaAsCollected(scheduleItem.location, scheduleItem.routeNumber);
+                await markAreaAsCollected(scheduleItem.location, scheduleItem.routeNumber, scheduleItem.routeId);
               }, 30000); // 30 seconds delay
             }
           }
@@ -402,7 +1047,8 @@ export default function LandingScreen() {
           const { data: routesData, error } = await supabase
             .from('routes')
             .select('*')
-            .eq('driver', collector.driver);
+            .eq('driver', collector.driver)
+            .eq('status', 'active'); // Only get active routes
           if (error) throw error;
           // assignedRoutes and areasCollected removed as they were unused in UI
           let scheduleList = [];
@@ -416,18 +1062,23 @@ export default function LandingScreen() {
               const timeIntervals = generateTimeIntervals(data.time, data.end_time, data.areas);
               
               // Create schedule entries for each time interval
-              timeIntervals.forEach(interval => {
-                const scheduleEntry = {
-                  time: interval.startTime,
-                  endTime: interval.endTime,
-                  location: interval.area,
-                  routeNumber: data.route,
-                  type: data.type || 'Waste Collection',
-                  frequency: data.frequency,
-                  dayOff: data.dayOff,
-                  areaIndex: interval.index
-                };
-                scheduleList.push(scheduleEntry);
+              // Use the original area name from routes.areas array to ensure exact match
+              data.areas.forEach((originalArea, areaIndex) => {
+                const interval = timeIntervals[areaIndex];
+                if (interval) {
+                  const scheduleEntry = {
+                    time: interval.startTime,
+                    endTime: interval.endTime,
+                    location: String(originalArea || interval.area || '').trim(), // Use original area name from routes table
+                    routeNumber: data.route,
+                    routeId: data.id,
+                    type: data.type || 'Waste Collection',
+                    frequency: data.frequency,
+                    dayOff: data.dayOff,
+                    areaIndex: interval.index
+                  };
+                  scheduleList.push(scheduleEntry);
+                }
               });
             }
             // collected count omitted without a direct mapping table
@@ -621,12 +1272,26 @@ export default function LandingScreen() {
               todaysSchedule.map((item, idx) => {
                 const isCollected = item.collected || collectedAreas.has(item.location);
                 return (
-                  <View
+                  <TouchableOpacity
                     style={[
                       styles.scheduleItem,
                       isCollected && styles.scheduleItemCollected
                     ]}
                     key={idx}
+                    onPress={() => {
+                      if (!isCollected) {
+                        console.log('🔘 Card clicked - Schedule item data:', {
+                          location: item.location,
+                          routeNumber: item.routeNumber,
+                          routeId: item.routeId,
+                          rawLocation: item.location,
+                          locationType: typeof item.location
+                        });
+                        handleManualCollection(item.location, item.routeNumber, item.routeId);
+                      }
+                    }}
+                    disabled={isCollected}
+                    activeOpacity={isCollected ? 1 : 0.7}
                   >
                     <View style={styles.scheduleTimeContainer}>
                       <Text style={[
@@ -685,7 +1350,7 @@ export default function LandingScreen() {
                         </Text>
                       )}
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })
             )}
@@ -908,7 +1573,8 @@ const styles = StyleSheet.create({
     borderRadius: 12, 
     padding: 16, 
     flexDirection: 'row', 
-    justifyContent: 'space-between', 
+    justifyContent: 'space-between',
+    marginBottom: 12, 
     alignItems: 'flex-start', 
     minHeight: 80,
     borderWidth: 1,
@@ -959,6 +1625,19 @@ const styles = StyleSheet.create({
     color: '#E8F5E8', 
     fontStyle: 'italic', 
     marginTop: 4 
+  },
+  markCollectedButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  markCollectedButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   collectionButton: { 
     justifyContent: 'center', 
