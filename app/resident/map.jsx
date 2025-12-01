@@ -773,7 +773,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 16,
     right: 16,
-    bottom: 24,
+    bottom: 110, // Positioned above the floating tab bar (tab bar ~100px + 10px spacing)
     padding: 14,
     borderRadius: 12,
     backgroundColor: 'white',

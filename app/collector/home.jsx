@@ -1,9 +1,10 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { AlertCircle, CheckCircle, MapPin } from 'lucide-react-native';
+import { AlertCircle, CheckCircle, MapPin, Navigation, Truck } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
 import { supabase } from '../../services/supabaseClient';
 
@@ -13,13 +14,33 @@ export default function LandingScreen() {
   // Removed unused states: assignedRoutes, areasCollected (not displayed)
   const [todaysSchedule, setTodaysSchedule] = useState([]);
   const [routeNames, setRouteNames] = useState([]);
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [isDropdownVisible, setIsDropdownVisible] = useState(false);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [collectedAreas, setCollectedAreas] = useState(new Set());
   const [locationPermission, setLocationPermission] = useState(false);
   const [collectedAreasLoaded, setCollectedAreasLoaded] = useState(false);
   const router = useRouter();
   const { collector, logout } = useCollectorAuth();
+  const [recentComplaints] = useState([
+    {
+      id: 'complaint-1',
+      title: 'Overflowing bin',
+      location: 'Barangay Poblacion',
+      severity: 'medium',
+      reportedAgo: 'Reported 2 hrs ago',
+    },
+    {
+      id: 'complaint-2',
+      title: 'Missed Pickup',
+      location: 'San Isidro',
+      severity: 'high',
+      reportedAgo: 'Reported 5 hrs ago',
+    },
+  ]);
+  const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+  const [issueType, setIssueType] = useState('');
+  const [issueDescription, setIssueDescription] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const formatTime = (timeString) => {
     if (!timeString) return '';
@@ -202,6 +223,48 @@ export default function LandingScreen() {
 
     } catch (error) {
       console.error('Error marking area as collected:', error);
+    }
+  };
+
+  const handleReportTruckIssue = () => {
+    setIsReportModalVisible(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsReportModalVisible(false);
+    setIssueType('');
+    setIssueDescription('');
+  };
+
+  const handleSubmitIssue = async () => {
+    if (!issueType.trim() || !issueDescription.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Here you can add code to submit to your backend/database
+      // For now, we'll just show a success message
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      
+      Alert.alert(
+        'Issue Reported',
+        'Your truck issue has been reported. Support will contact you shortly.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              handleCloseModal();
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to submit issue. Please try again.');
+      console.error('Error submitting issue:', error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -431,7 +494,7 @@ export default function LandingScreen() {
   };
 
   const handleLogout = async () => {
-    setShowDropdown(false);
+    setIsDropdownVisible(false);
     Alert.alert(
       "Logout Confirmation",
       "Are you sure you want to logout?",
@@ -457,45 +520,64 @@ export default function LandingScreen() {
   }
 
   return (
+    <SafeAreaView style={styles.safeArea}>
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>Gwaste</Text>
-          <View style={styles.truckIcon}>
-            <Text style={styles.truckEmoji}>🚛</Text>
-          </View>
+          <Image 
+            source={require('../../assets/images/logo.png')} 
+            style={styles.logo}
+          />
         </View>
-        <TouchableOpacity style={styles.profileContainer} onPress={() => setShowDropdown(v => !v)}>
-          <View style={styles.profileCircle}>
-            <Image 
-              source={{ uri: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=100&h=100&fit=crop&crop=face' }}
-              style={styles.profileImage}
-            />
-            <View style={styles.onlineIndicator} />
-          </View>
+        <TouchableOpacity 
+          style={styles.profileContainer}
+          onPress={() => setIsDropdownVisible(!isDropdownVisible)}
+        >
+          <Image 
+            source={require('../../assets/images/icon.png')} 
+            style={styles.profilePic}
+          />
         </TouchableOpacity>
-        {showDropdown && (
-          <View style={styles.dropdownMenu}>
-            <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/collector/profile'); }}>
-              <Text style={styles.dropdownText}>My Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.dropdownItem} onPress={() => { setShowDropdown(false); router.push('/collector/settings'); }}>
-              <Text style={styles.dropdownText}>Settings</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
-              <Text style={styles.dropdownText}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      {isDropdownVisible && (
+        <View style={styles.dropdownMenu}>
+          <TouchableOpacity 
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/collector/profile');
+            }}
+          >
+            <Text style={styles.dropdownText}>Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/collector/settings');
+            }}
+          >
+            <Text style={styles.dropdownText}>Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
+            <Text style={styles.dropdownText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.greetingSection}>
           {loading ? (
             <ActivityIndicator size="small" color="#8BC500" />
           ) : (
             <Text style={styles.greeting}>
-              Good Morning{displayName ? `, ${displayName}` : ''}! Ready to collect?
+              Good Morning{displayName ? `, ${displayName}` : ''}! 
             </Text>
           )}
           <View style={styles.routeInfo}>
@@ -526,6 +608,21 @@ export default function LandingScreen() {
           </View>
         </View> */}
 
+        {/* Live Route Status Card */}
+        <View style={styles.section}>
+          <View style={styles.liveRouteCard}>
+            <View style={styles.liveRouteHeader}>
+              <Navigation size={20} color="#458A3D" />
+              <Text style={styles.liveRouteTitle}>Live Route Status</Text>
+            </View>
+            <Text style={styles.liveRouteText}>
+              Your assigned route has automatically started.
+            </Text>
+            <Text style={styles.liveRouteText}>
+              GPS tracking is active — location updates automatically.
+            </Text>
+          </View>
+        </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Today`s Schedule:</Text>
@@ -618,43 +715,220 @@ export default function LandingScreen() {
             )}
           </View>
         </View>
+
+        <View style={styles.section}>
+          <View style={styles.complaintCard}>
+            <Text style={styles.complaintTitle}>Recent Complaints</Text>
+            {(recentComplaints || []).length > 0 ? (
+              recentComplaints.map((item, idx) => (
+                <View key={item?.id || idx} style={styles.complaintRow}>
+                  <View
+                    style={[
+                      styles.complaintIndicator,
+                      { backgroundColor: item?.severity === 'high' ? '#EF4444' : '#FBBF24' },
+                    ]}
+                  />
+                  <View style={styles.complaintInfo}>
+                    <Text style={styles.complaintText}>
+                      {item?.title || 'Overflowing bin'} – {item?.location || 'Unknown area'}
+                    </Text>
+                    <Text style={styles.complaintMeta}>
+                      Reported {item?.reportedAgo || 'just now'}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyComplaintState}>
+                <Text style={styles.emptyComplaintText}>No recent complaints 🎉</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Report Truck Issue Button */}
+        <View style={styles.section}>
+          <TouchableOpacity 
+            style={styles.reportTruckButton}
+            onPress={handleReportTruckIssue}
+            activeOpacity={0.8}
+          >
+            <Truck size={20} color="#FFFFFF" />
+            <Text style={styles.reportTruckButtonText}>Report Truck Issue</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
+
+      {/* Report Truck Issue Modal */}
+      <Modal
+        visible={isReportModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={handleCloseModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={handleCloseModal}
+          />
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Report Truck Issue</Text>
+              <TouchableOpacity onPress={handleCloseModal}>
+                <Text style={styles.modalCloseButton}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Issue Type *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g., Engine problem, Flat tire, Brake issue"
+                  value={issueType}
+                  onChangeText={setIssueType}
+                  placeholderTextColor="#999"
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Description *</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Please provide details about the issue..."
+                  value={issueDescription}
+                  onChangeText={setIssueDescription}
+                  multiline
+                  numberOfLines={5}
+                  textAlignVertical="top"
+                  placeholderTextColor="#999"
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={handleCloseModal}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+                onPress={handleSubmitIssue}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Submit Report</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#f8f9fa' },
   container: { flex: 1, backgroundColor: '#f8f9fa' },
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16, backgroundColor: '#fff',
-    borderBottomWidth: 1, borderBottomColor: '#e0e0e0', position: 'absolute', top: 0, left: 0, right: 0,
-    zIndex: 1000, elevation: 5,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 17,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
-  scrollView: { flex: 1, marginTop: 81 },
-  logoContainer: { flexDirection: 'row', alignItems: 'center' },
-  logoText: { fontSize: 24, fontWeight: 'bold', color: '#458A3D' },
-  truckIcon: { marginLeft: 8 },
-  truckEmoji: { fontSize: 20 },
+  scrollView: { flex: 1, backgroundColor: '#f8f9fa' },
+  scrollContent: {
+    paddingBottom: 100,
+  },
+  logoContainer: {
+    height: 40,
+  },
+  logo: {
+    height: 40,
+    width: 80,
+    resizeMode: 'contain',
+  },
   profileContainer: { position: 'relative' },
-  profileCircle: {
-    width: 45, height: 45, borderRadius: 22.5, borderWidth: 2, borderColor: '#8BC500', overflow: 'hidden', backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center',
+  profilePic: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
-  profileImage: { width: '100%', height: '100%', borderRadius: 20 },
-  onlineIndicator: { position: 'absolute', bottom: 2, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: '#4CAF50', borderWidth: 2, borderColor: '#fff' },
-  greetingSection: { paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#fff' },
+  greetingSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#fff',
+    marginTop: 12,
+  },
   greeting: { fontSize: 24, fontWeight: 'bold', color: '#333', marginBottom: 8 },
   routeInfo: { flexDirection: 'row', alignItems: 'center' },
   routeText: { fontSize: 14, color: '#666', marginLeft: 4 },
   section: { paddingHorizontal: 20, paddingVertical: 16 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: '#458A3D', marginBottom: 12 },
+  liveRouteCard: {
+    backgroundColor: '#E8F5E8',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  liveRouteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  liveRouteTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginLeft: 8,
+  },
+  liveRouteText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  reportTruckButton: {
+    backgroundColor: '#458A3D',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  reportTruckButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
   quickActionGrid: { flexDirection: 'row', justifyContent: 'space-between' },
   quickActionCard: { width: '48%', backgroundColor: '#E3F2E8', padding: 16, borderRadius: 12, alignItems: 'center' },
   quickActionNumber: { fontSize: 32, fontWeight: 'bold', color: '#458A3D', marginTop: 8 },
   quickActionLabel: { fontSize: 12, color: '#666', marginTop: 4, textAlign: 'center' },
   scheduleList: { gap: 8 },
   scheduleItem: { 
-    backgroundColor: '#E8F5E8', 
+    backgroundColor: '#FFFFFF', 
     borderRadius: 12, 
     padding: 16, 
     flexDirection: 'row', 
@@ -669,11 +943,11 @@ const styles = StyleSheet.create({
     borderColor: '#1B5E20'
   },
   scheduleTimeContainer: { flexDirection: 'column', alignItems: 'flex-start', marginRight: 16, minWidth: 110 },
-  scheduleTime: { fontSize: 14, color: '#458A3D', fontWeight: 'bold', marginBottom: 2 },
+  scheduleTime: { fontSize: 14, color: '#000000', fontWeight: 'bold', marginBottom: 2 },
   scheduleTimeCollected: { color: '#E8F5E8' },
-  scheduleRoute: { fontSize: 12, color: '#666', marginTop: 2, fontWeight: '500' },
+  scheduleRoute: { fontSize: 12, color: '#000000', marginTop: 2, fontWeight: '500' },
   scheduleRouteCollected: { color: '#C8E6C9' },
-  areaIndex: { fontSize: 10, color: '#888', marginTop: 1, fontStyle: 'italic' },
+  areaIndex: { fontSize: 10, color: '#000000', marginTop: 1, fontStyle: 'italic' },
   areaIndexCollected: { color: '#A5D6A7' },
   scheduleLocationContainer: { flex: 1, alignItems: 'flex-start' },
   locationHeader: { 
@@ -700,9 +974,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold', 
     marginLeft: 4 
   },
-  scheduleType: { fontSize: 14, color: '#666', marginBottom: 2 },
+  scheduleType: { fontSize: 14, color: '#000000', marginBottom: 2 },
   scheduleTypeCollected: { color: '#C8E6C9' },
-  scheduleFrequency: { fontSize: 12, color: '#666', fontStyle: 'italic' },
+  scheduleFrequency: { fontSize: 12, color: '#000000', fontStyle: 'italic' },
   scheduleFrequencyCollected: { color: '#A5D6A7' },
   collectedTime: { 
     fontSize: 11, 
@@ -736,6 +1010,147 @@ const styles = StyleSheet.create({
   dropdownMenu: { position: 'absolute', top: 60, right: 0, backgroundColor: '#fff', borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 5, zIndex: 2000, minWidth: 150 },
   dropdownItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#eee' },
   dropdownText: { fontSize: 16, color: '#333' },
+  complaintCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+    gap: 16,
+  },
+  complaintTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  complaintRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  complaintIndicator: {
+    width: 4,
+    borderRadius: 4,
+    alignSelf: 'stretch',
+  },
+  complaintInfo: {
+    flex: 1,
+  },
+  complaintText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  complaintMeta: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  emptyComplaintState: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  emptyComplaintText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 6,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    paddingBottom: Platform.OS === 'ios' ? 20 : 0,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  modalCloseButton: {
+    fontSize: 24,
+    color: '#6B7280',
+    fontWeight: '300',
+  },
+  modalBody: {
+    padding: 20,
+    maxHeight: 400,
+  },
+  formGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#111827',
+    backgroundColor: '#FFFFFF',
+  },
+  textArea: {
+    height: 120,
+    paddingTop: 12,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#F3F4F6',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  submitButton: {
+    backgroundColor: '#458A3D',
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
 });
 
 

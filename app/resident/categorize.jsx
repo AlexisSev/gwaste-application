@@ -1,7 +1,8 @@
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors } from '../../constants/Colors';
@@ -98,9 +99,25 @@ export default function CategorizeScreen() {
   ];
 
   const [selectedId, setSelectedId] = useState(null);
+  const [isDropdownVisible, setIsDropdownVisible] = useState(false);
 
   const handlePressCategory = (id) => {
     setSelectedId(id);
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout Confirmation',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: () => router.push('/login'),
+        },
+      ]
+    );
   };
 
   const selectedCategory = categories.find((c) => c.id === selectedId);
@@ -123,13 +140,63 @@ export default function CategorizeScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: '#f5f5f5' }]}>
       <StatusBar style="auto" />
 
+      <View style={styles.header}>
+        <View style={styles.logoContainer}>
+          <Image
+            source={require('../../assets/images/logo.png')}
+            style={styles.logo}
+          />
+        </View>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.notificationButton}
+            onPress={() => Alert.alert('Notifications', 'No new notifications')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="notifications-outline" size={22} color="#8BC500" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.profileContainer}
+            onPress={() => setIsDropdownVisible(prev => !prev)}
+          >
+            <Image
+              source={require('../../assets/images/icon.png')}
+              style={styles.profilePic}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {isDropdownVisible && (
+        <View style={styles.dropdownMenu}>
+          <TouchableOpacity
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/resident/profile');
+            }}
+          >
+            <Text style={styles.dropdownText}>Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.dropdownItem}
+            onPress={() => {
+              setIsDropdownVisible(false);
+              router.push('/resident/settings');
+            }}
+          >
+            <Text style={styles.dropdownText}>Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dropdownItem} onPress={handleLogout}>
+            <Text style={styles.dropdownText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Show header ONLY when no category is selected */}
       {!selectedId && (
         <View style={styles.hero}>
           <Text style={[styles.heroTitle, { color: colors.primary }]}>Waste Sorting Guide</Text>
-          <Text style={[styles.heroSubtitle, { color: colors.primary }]}>
-            See which bin each item goes to based{'\n'}on its category.
-          </Text>
         </View>
       )}
 
@@ -229,15 +296,74 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  logoContainer: {
+    height: 40,
+  },
+  logo: {
+    height: 40,
+    width: 80,
+    resizeMode: 'contain',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  notificationButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3F6EF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  profileContainer: {
+    position: 'relative',
+  },
+  profilePic: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 80,
+    right: 20,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 2000,
+    minWidth: 150,
+  },
+  dropdownItem: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#333',
+  },
   hero: {
     backgroundColor: HERO_BG,
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
+    paddingVertical: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#E5ECD9',
-    height: 110,
-    justifyContent: 'center',
   },
   imageWrap: {
     alignItems: 'center',
@@ -255,9 +381,9 @@ const styles = StyleSheet.create({
     color: '#2D5016',
   },
   heroTitle: {
-    fontSize: 32,
-    fontWeight: '700',
-    marginBottom: 4,
+    fontSize: 28,
+    fontWeight: '800',
+    marginBottom: 6,
   },
   heroSubtitle: {
     fontSize: 16,
@@ -266,6 +392,7 @@ const styles = StyleSheet.create({
   gridContainer: {
     paddingHorizontal: 20,
     paddingTop: 14,
+    paddingBottom: 140,
   },
   gridItem: {
     width: '48%',
@@ -296,7 +423,7 @@ const styles = StyleSheet.create({
   detailWrapper: {
     flex: 1,
   },
-  detailContainer: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 20 },
+  detailContainer: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 160 },
   detailHeader: {
     flexDirection: 'row',
     alignItems: 'center',

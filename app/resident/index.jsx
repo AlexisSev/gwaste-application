@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -106,7 +106,12 @@ export default function ResidentIndex() {
       );
       
     } catch (error) {
-      console.error('Error loading collection status:', error);
+      const rawMessage = typeof error?.message === 'string' ? error.message : String(error);
+      const looksLikeHtml = rawMessage.trim().startsWith('<!');
+      const friendlyMessage = looksLikeHtml
+        ? 'Unexpected response from server while loading collection status.'
+        : rawMessage;
+      console.warn('Error loading collection status:', friendlyMessage);
     }
   };
 
@@ -442,6 +447,26 @@ export default function ResidentIndex() {
     return 'Good Evening';
   };
 
+  const today = new Date();
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay());
+  const nextPickupDateString = scheduleData?.fullDate
+    ? new Date(scheduleData.fullDate).toDateString()
+    : null;
+
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(startOfWeek);
+    date.setDate(startOfWeek.getDate() + index);
+    const dateString = date.toDateString();
+    return {
+      key: date.toISOString(),
+      label: date.toLocaleDateString('en-US', { weekday: 'short' }),
+      dateNumber: date.getDate(),
+      isToday: dateString === today.toDateString(),
+      isPickup: nextPickupDateString ? dateString === nextPickupDateString : false,
+    };
+  });
+
   const handleLogout = () => {
     Alert.alert(
       "Logout Confirmation",
@@ -460,6 +485,17 @@ export default function ResidentIndex() {
     );
   };
 
+  const handleNotificationPress = () => {
+    if (!notifications?.length) {
+      Alert.alert('Notifications', 'You are all caught up!');
+    } else {
+      Alert.alert(
+        'Notifications',
+        `You have ${notifications.length} new notification${notifications.length > 1 ? 's' : ''}.`
+      );
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -469,15 +505,25 @@ export default function ResidentIndex() {
             style={styles.logo}
           />
         </View>
-        <TouchableOpacity 
-          style={styles.profileContainer}
-          onPress={() => setIsDropdownVisible(!isDropdownVisible)}
-        >
-          <Image 
-            source={require('../../assets/images/icon.png')} 
-            style={styles.profilePic}
-          />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.notificationButton}
+            onPress={handleNotificationPress}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="notifications-outline" size={22} color="#8BC500" />
+            {notifications?.length > 0 && <View style={styles.notificationDot} />}
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.profileContainer}
+            onPress={() => setIsDropdownVisible(!isDropdownVisible)}
+          >
+            <Image 
+              source={require('../../assets/images/icon.png')} 
+              style={styles.profilePic}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {isDropdownVisible && (
@@ -508,6 +554,7 @@ export default function ResidentIndex() {
 
       <ScrollView 
         style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.content}>
@@ -602,6 +649,56 @@ export default function ResidentIndex() {
             </View>
           </View>
 
+        {/* Weekly Calendar */}
+        <View style={styles.calendarCard}>
+          <View style={styles.calendarHeader}>
+            <View>
+              <Text style={styles.calendarMonth}>
+                {today.toLocaleDateString('en-US', { month: 'long' })}
+              </Text>
+              <Text style={styles.calendarYear}>{today.getFullYear()}</Text>
+            </View>
+          </View>
+          <View style={styles.calendarWeekRow}>
+            {weekDays.map((day) => (
+              <View key={day.key} style={styles.calendarDay}>
+                <Text
+                  style={[
+                    styles.calendarDayLabel,
+                    day.isToday && styles.calendarDayLabelToday,
+                  ]}
+                >
+                  {day.label}
+                </Text>
+                <View
+                  style={[
+                    styles.calendarDateBubble,
+                    day.isPickup && !day.isToday && styles.calendarDateBubblePickup,
+                    day.isToday && styles.calendarDateBubbleToday,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.calendarDateText,
+                      day.isToday && styles.calendarDateTextToday,
+                    ]}
+                  >
+                    {day.dateNumber}
+                  </Text>
+                  {day.isPickup && day.isToday && (
+                    <View style={styles.calendarPickupDot} />
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
+          {scheduleData && (
+            <Text style={styles.calendarFooter}>
+              Next pickup on {scheduleData.date} • Route {scheduleData.routeNumber || '—'}
+            </Text>
+          )}
+        </View>
+
           {/* Feature Cards Grid */}
           <View style={styles.featureCardsGrid}>
             {/* Truck Location Card */}
@@ -617,13 +714,7 @@ export default function ResidentIndex() {
             </TouchableOpacity>
 
             {/* Announcements Card */}
-            <TouchableOpacity style={styles.featureCard}>
-              <View style={[styles.featureIconContainer, styles.announcementIcon]}>
-                <Feather name="alert-triangle" size={20} color="#FFA500" />
-              </View>
-              <Text style={styles.featureTitle}>Announcements</Text>
-              <Text style={styles.featureDescription}>Heavy rain delay</Text>
-            </TouchableOpacity>
+            
 
             {/* Eco Tip Card */}
             <TouchableOpacity 
@@ -638,10 +729,6 @@ export default function ResidentIndex() {
             </TouchableOpacity>
           </View>
 
-          {/* Report Concern Button */}
-          {/* <TouchableOpacity style={styles.reportConcernButton}>
-            <Text style={styles.reportConcernText}>Report a Concern</Text>
-          </TouchableOpacity> */}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -670,18 +757,52 @@ const styles = StyleSheet.create({
     width: 80,
     resizeMode: 'contain',
   },
-  profileContainer: {
-    position: 'relative'
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  profilePic: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  notificationButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
+    backgroundColor: '#F3F6EF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  notificationDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF6B6B',
+  },
+  profileContainer: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    overflow: 'hidden',
+  },
+  profilePic: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 17,
   },
   scrollView: {
     flex: 1,
     marginTop: 4,
     backgroundColor: '#f8f9fa'
+  },
+  scrollContent: {
+    paddingBottom: 100,
   },
   content: {
     flex: 1,
@@ -690,7 +811,7 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#4CAF50',
+    color: '#0f0f0f',
     marginBottom: 8,
   },
   locationContainer: {
@@ -989,6 +1110,101 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  calendarCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  calendarMonth: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  calendarYear: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  calendarLink: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#E8F5E8',
+  },
+  calendarLinkText: {
+    color: '#2F855A',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  calendarWeekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  calendarDay: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  calendarDayLabel: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginBottom: 6,
+  },
+  calendarDayLabelToday: {
+    color: '#2F855A',
+    fontWeight: '600',
+  },
+  calendarDateBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  calendarDateBubbleToday: {
+    backgroundColor: '#2F855A',
+  },
+  calendarDateBubblePickup: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 2,
+    borderColor: '#F6AD55',
+  },
+  calendarDateText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  calendarDateTextToday: {
+    color: '#fff',
+  },
+  calendarFooter: {
+    fontSize: 13,
+    color: '#4B5563',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  calendarPickupDot: {
+    position: 'absolute',
+    bottom: 6,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FBBF24',
   },
   featureCardsGrid: {
     flexDirection: 'row',
