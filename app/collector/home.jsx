@@ -2,7 +2,7 @@
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { AlertCircle, CheckCircle, Navigation, Truck } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
@@ -22,26 +22,42 @@ export default function LandingScreen() {
   const [collectedAreasLoaded, setCollectedAreasLoaded] = useState(false);
   const router = useRouter();
   const { collector, logout } = useCollectorAuth();
-  const [recentComplaints] = useState([
-    {
-      id: 'complaint-1',
-      title: 'Overflowing bin',
-      location: 'Barangay Poblacion',
-      severity: 'medium',
-      reportedAgo: 'Reported 2 hrs ago',
-    },
-    {
-      id: 'complaint-2',
-      title: 'Missed Pickup',
-      location: 'San Isidro',
-      severity: 'high',
-      reportedAgo: 'Reported 5 hrs ago',
-    },
-  ]);
+  const [recentComplaints, setRecentComplaints] = useState([]);
   const [isReportModalVisible, setIsReportModalVisible] = useState(false);
   const [issueType, setIssueType] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // All distinct area names in this collector's routes for today
+  const routeAreas = useMemo(() => {
+    const set = new Set();
+    (todaysSchedule || []).forEach((item) => {
+      if (item?.location) {
+        set.add(String(item.location).trim());
+      }
+    });
+    return set;
+  }, [todaysSchedule]);
+
+  // Helper: human-readable "reported X ago"
+  const getReportedAgo = (createdAt) => {
+    if (!createdAt) return 'just now';
+    try {
+      const created = new Date(createdAt);
+      const now = new Date();
+      const diffMs = now - created;
+      const diffMinutes = Math.floor(diffMs / (1000 * 60));
+      const diffHours = Math.floor(diffMinutes / 60);
+      const diffDays = Math.floor(diffHours / 24);
+
+      if (diffMinutes < 1) return 'just now';
+      if (diffMinutes < 60) return `${diffMinutes} min${diffMinutes === 1 ? '' : 's'} ago`;
+      if (diffHours < 24) return `${diffHours} hr${diffHours === 1 ? '' : 's'} ago`;
+      return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+    } catch (_e) {
+      return 'just now';
+    }
+  };
 
   const formatTime = (timeString) => {
     if (!timeString) return '';
@@ -1102,6 +1118,60 @@ export default function LandingScreen() {
     fetchCollectorAndRoutes();
   }, [collector]);
 
+  // Load recent complaints from reports table, filtered to this driver's route areas
+  useEffect(() => {
+    const fetchRecentComplaints = async () => {
+      try {
+        // Fetch latest 10 reports, then filter by route areas on the client
+        const { data, error } = await supabase
+          .from('reports')
+          .select('id, subject, location, report_type, status, created_at')
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (error) {
+          console.error('Error fetching recent complaints:', error);
+          return;
+        }
+
+        const areasArray = Array.from(routeAreas).map((a) =>
+          String(a || '').trim().toLowerCase()
+        );
+
+        const filtered = (data || []).filter((r) => {
+          const loc = String(r.location || '').trim().toLowerCase();
+          if (!loc || areasArray.length === 0) return false;
+
+          // Match resident_address/location text to any of the route areas
+          return areasArray.some((area) => loc.includes(area));
+        });
+
+        const mapped = filtered.map((r) => ({
+          id: r.id,
+          title: r.subject || r.report_type || 'Issue',
+          location: r.location || 'Unknown area',
+          // Treat pending / in-progress as high severity so they stand out
+          severity:
+            r.status === 'pending' || r.status === 'in_progress'
+              ? 'high'
+              : 'medium',
+          createdAt: r.created_at,
+        }));
+
+        setRecentComplaints(mapped);
+      } catch (err) {
+        console.error('Unexpected error fetching recent complaints:', err);
+      }
+    };
+
+    // Only fetch when a collector is logged in and we know their areas
+    if (collector && routeAreas.size > 0) {
+      fetchRecentComplaints();
+    } else {
+      setRecentComplaints([]);
+    }
+  }, [collector, routeAreas]);
+
   useEffect(() => {
     if (!collector) {
       router.replace('/login');
@@ -1374,7 +1444,7 @@ export default function LandingScreen() {
                       {item?.title || 'Overflowing bin'} – {item?.location || 'Unknown area'}
                     </Text>
                     <Text style={styles.complaintMeta}>
-                      Reported {item?.reportedAgo || 'just now'}
+                      Reported {getReportedAgo(item?.createdAt)}
                     </Text>
                   </View>
                 </View>
