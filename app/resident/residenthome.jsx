@@ -2,12 +2,12 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { Feather, Ionicons } from '@expo/vector-icons';
-import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import DraggableFloatingButton from '../../components/DraggableFloatingButton';
 import { useResidentAuth } from '../../hooks/useResidentAuth';
 import { supabase } from '../../services/supabaseClient';
 
@@ -328,20 +328,34 @@ export default function ResidentIndex() {
         const todaySchedule = [];
         const today = new Date();
         const residentPurok = resident?.purok || residentData?.purok || '';
+        const residentAddress = resident?.resident_address || resident?.address || residentData?.address || '';
         
         (routes || []).forEach(data => {
           // console.log('Route data:', data);
           // console.log('Route areas:', data.areas);
           // console.log('Resident purok:', residentPurok);
+          // console.log('Resident address:', residentAddress);
           
-          // Check if this route includes the resident's area
-          if (data.areas && data.areas.some(area => 
-            area && (
-              area.toLowerCase().includes('malata') || 
-              area.toLowerCase().includes(residentPurok.toLowerCase()) ||
-              data.type?.toLowerCase().includes('malata')
-            )
-          )) {
+          // Check if this route includes the resident's area based on purok or address
+          const matchesArea = data.areas && data.areas.some(area => {
+            if (!area) return false;
+            const areaLower = area.toLowerCase();
+            const purokLower = residentPurok.toLowerCase();
+            const addressLower = residentAddress.toLowerCase();
+            
+            // Match by purok
+            if (purokLower && areaLower.includes(purokLower)) return true;
+            // Match by address (check if any part of address matches area)
+            if (addressLower && areaLower.includes(addressLower)) return true;
+            // Match by address (check if address contains area name)
+            if (addressLower && addressLower.includes(areaLower)) return true;
+            // Match by malata keyword
+            if (areaLower.includes('malata') || data.type?.toLowerCase().includes('malata')) return true;
+            
+            return false;
+          });
+          
+          if (matchesArea) {
             // console.log('Found matching route:', data);
             const frequency = data.frequency?.toLowerCase() || '';
             
@@ -415,10 +429,81 @@ export default function ResidentIndex() {
           return timeA - timeB;
         });
         
+        // Find the best matching route based on resident address
+        let bestMatchingRoute = null;
+        if (residentAddress || residentPurok) {
+          // Find route that best matches the resident's address or purok
+          const addressLower = (residentAddress || '').toLowerCase().trim();
+          const purokLower = (residentPurok || '').toLowerCase().trim();
+          
+          const matchingRoutes = (routes || []).filter(route => {
+            if (!route.areas || !Array.isArray(route.areas)) return false;
+            return route.areas.some(area => {
+              if (!area) return false;
+              const areaLower = String(area).toLowerCase().trim();
+              
+              // Exact match (highest priority)
+              if (addressLower && (areaLower === addressLower || areaLower === purokLower)) return true;
+              if (purokLower && areaLower === purokLower) return true;
+              
+              // Contains match (medium priority)
+              if (addressLower && (areaLower.includes(addressLower) || addressLower.includes(areaLower))) return true;
+              if (purokLower && (areaLower.includes(purokLower) || purokLower.includes(areaLower))) return true;
+              
+              return false;
+            });
+          });
+          
+          // If we found matching routes, prioritize by exact match, then by route number
+          if (matchingRoutes.length > 0) {
+            // Sort: exact matches first, then by route number
+            bestMatchingRoute = matchingRoutes.sort((a, b) => {
+              const aHasExactMatch = a.areas.some(area => {
+                const areaLower = String(area).toLowerCase().trim();
+                return areaLower === addressLower || areaLower === purokLower;
+              });
+              const bHasExactMatch = b.areas.some(area => {
+                const areaLower = String(area).toLowerCase().trim();
+                return areaLower === addressLower || areaLower === purokLower;
+              });
+              
+              if (aHasExactMatch && !bHasExactMatch) return -1;
+              if (!aHasExactMatch && bHasExactMatch) return 1;
+              
+              const routeA = parseInt(a.route) || 0;
+              const routeB = parseInt(b.route) || 0;
+              return routeA - routeB;
+            })[0];
+          }
+        }
+        
         const nextPickup = allPickups.length > 0 ? allPickups[0] : null;
+        
+        // If we found a better matching route based on address, update the route number
+        if (nextPickup && bestMatchingRoute) {
+          nextPickup.routeNumber = bestMatchingRoute.route;
+        } else if (nextPickup && !nextPickup.routeNumber) {
+          // Fallback: try to find route from allPickups that matches the address
+          const addressBasedRoute = allPickups.find(pickup => {
+            // Check if this pickup's location matches the resident's address
+            const pickupLocation = (pickup.location || '').toLowerCase();
+            const addressLower = (residentAddress || '').toLowerCase();
+            const purokLower = (residentPurok || '').toLowerCase();
+            return pickupLocation.includes(addressLower) || 
+                   pickupLocation.includes(purokLower) ||
+                   addressLower.includes(pickupLocation) ||
+                   purokLower.includes(pickupLocation);
+          });
+          
+          if (addressBasedRoute && addressBasedRoute.routeNumber) {
+            nextPickup.routeNumber = addressBasedRoute.routeNumber;
+          }
+        }
+        
         // console.log('All pickups found:', allPickups);
         // console.log('Next pickup selected:', nextPickup);
         // console.log('Today schedule:', todaySchedule);
+        // console.log('Best matching route:', bestMatchingRoute);
         setScheduleData(nextPickup);
         setScheduleLoading(false);
       } catch (error) {
@@ -889,14 +974,14 @@ export default function ResidentIndex() {
         </View>
       </ScrollView>
       
-      {/* Floating Chatbot Button */}
-      <TouchableOpacity 
-        style={styles.floatingChatButton}
+      {/* Draggable Floating Chatbot Button */}
+      <DraggableFloatingButton
         onPress={() => router.push('/resident/GwasteChatbot')}
-        activeOpacity={0.8}
-      >
-        <FontAwesome5 name="robot" size={24} color="#ffffff" />
-      </TouchableOpacity>
+        icon="robot"
+        iconSize={24}
+        iconColor="#ffffff"
+        backgroundColor="#8BC500"
+      />
     </SafeAreaView>
   );
 }
@@ -1447,24 +1532,4 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     fontWeight: '500',
   },
-  floatingChatButton: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#8BC500',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    zIndex: 1000,
-  }
 });

@@ -25,7 +25,17 @@ export default function FloatingTabBar({ tabs: customTabs }) {
 
   const isActive = (route) => {
     const normalizedRoute = normalizePath(route);
-    return currentPath === normalizedRoute;
+    // Exact match
+    if (currentPath === normalizedRoute) return true;
+    // Handle index routes - if route is /resident and currentPath is /resident/residenthome
+    if (normalizedRoute === '/resident' && (currentPath === '/resident/residenthome' || currentPath === '/resident')) return true;
+    // Handle residenthome route specifically
+    if (normalizedRoute === '/resident/residenthome' && (currentPath === '/resident/residenthome' || currentPath === '/resident')) return true;
+    // Handle collector home route
+    if (normalizedRoute === '/collector/home' && (currentPath === '/collector/home' || currentPath === '/collector')) return true;
+    // Handle nested routes - check if current path starts with the route (but not for exact matches)
+    if (normalizedRoute !== currentPath && currentPath.startsWith(normalizedRoute + '/')) return true;
+    return false;
   };
 
   const handlePress = (route) => {
@@ -46,8 +56,8 @@ export default function FloatingTabBar({ tabs: customTabs }) {
               <View style={[styles.iconContainer, active && styles.iconContainerActive]}>
                 <Feather
                   name={tab.icon}
-                  size={22}
-                  color={active ? '#2D5016' : '#9CA3AF'}
+                  size={active ? 24 : 22}
+                  color={active ? '#000000' : '#9CA3AF'}
                 />
               </View>
             </TouchableOpacity>
@@ -102,8 +112,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
+    overflow: 'hidden',
   },
   iconContainerActive: {
-    backgroundColor: '#EEF6E8',
+    backgroundColor: '#E8F5E8',
+    width: 70,
+    height: 40,
+    borderRadius: 20,
   },
 });

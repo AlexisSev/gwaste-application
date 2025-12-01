@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Image as RNImage,
@@ -102,12 +103,14 @@ export default function ResidentSignup() {
   return (
     <KeyboardAvoidingView
       style={styles.flex}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
     >
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
       >
         {/* Logo */}
         <RNImage
@@ -209,7 +212,15 @@ export default function ResidentSignup() {
 
           <Text style={styles.link}>
             Already have an account?{" "}
-            <Text style={styles.linkText} onPress={() => router.replace("/login")}>
+            <Text 
+              style={styles.linkText} 
+              onPress={() => {
+                Keyboard.dismiss();
+                setTimeout(() => {
+                  router.replace("/login");
+                }, 100);
+              }}
+            >
               Log in here
             </Text>
           </Text>
@@ -224,11 +235,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   container: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 24,
+    paddingVertical: 20,
+    paddingBottom: 40,
   },
   logo: {
     width: Math.min(vw(55), 240),
@@ -243,11 +256,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 16,
     padding: 24,
+    paddingBottom: 32,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
+    marginBottom: 20,
   },
   title: {
     marginBottom: 8,
@@ -275,11 +290,14 @@ const styles = StyleSheet.create({
   },
   link: {
     color: "#666",
-    marginTop: 8,
+    marginTop: 12,
     textAlign: "center",
+    fontSize: 15,
   },
   linkText: {
-    color: "#87CEEB",
+    color: "#2196F3",
+    fontWeight: "600",
+    fontSize: 15,
   },
   pickerContainer: {
     flexDirection: 'row',

@@ -82,6 +82,8 @@ export const ResidentAuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await AsyncStorage.removeItem('residents');
+      // Also clear remembered credentials on logout
+      await AsyncStorage.removeItem('rememberedCredentials');
       setResident(null);
     } catch (error) {
       console.error('Error during resident logout:', error);

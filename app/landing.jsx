@@ -24,16 +24,9 @@ export default function HomeScreen() {
       <View style={styles.buttonSection}>
         <PrimaryButton
           onPress={() => router.push('/signup')}
-          style={styles.signUpButton}
+          style={styles.getStartedButton}
         >
-          <Text style={styles.signUpButtonText}>Sign Up</Text>
-        </PrimaryButton>
-        
-        <PrimaryButton
-          onPress={() => router.push('/login')}
-          style={styles.signInButton}
-        >
-          <Text style={styles.signInButtonText}>Sign In</Text>
+          <Text style={styles.getStartedButtonText}>Get Started</Text>
         </PrimaryButton>
       </View>
     </View>
@@ -77,34 +70,18 @@ const styles = StyleSheet.create({
   },
   buttonSection: {
     paddingBottom: 40,
-    gap: 16,
   },
-  signUpButton: {
+  getStartedButton: {
     backgroundColor: '#458A3D',
-    marginBottom: 9,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     width: '100%',
   },
-  signUpButtonText: {
+  getStartedButtonText: {
     color: '#fff',
     fontWeight: '600',
     fontSize: 18,
     textAlign: 'center',
-  },
-  signInButton: {
-    backgroundColor: '#fff',
-    borderColor: '#458A3D',
-    borderWidth: 2,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    width: '100%',
-  },
-  signInButtonText: {
-    color: '#458A3D',
-    fontWeight: 'bold',
-    fontSize: 16,
   },
 }); 

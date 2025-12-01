@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 
+import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -20,10 +21,87 @@ export default function ScheduleScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedRouteId, setSelectedRouteId] = useState(null);
   const [isDropdownVisible, setIsDropdownVisible] = useState(false);
+  const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
     fetchRoutes();
   }, []);
+
+  // Load notifications for the resident
+  const loadNotifications = async () => {
+    try {
+      const residentId = resident?.id;
+      if (!residentId) {
+        console.log('⚠️ No resident ID available for loading notifications');
+        return;
+      }
+      
+      // Try RPC function first (bypasses RLS)
+      let data = null;
+      let error = null;
+      
+      try {
+        const result = await supabase.rpc('get_resident_notifications', {
+          p_user_id: residentId,
+          p_limit: 50
+        });
+        data = result.data;
+        error = result.error;
+      } catch (rpcError) {
+        console.warn('⚠️ RPC function not available, trying direct query:', rpcError);
+        // Fallback to direct query (may be blocked by RLS)
+        const result = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', residentId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        data = result.data;
+        error = result.error;
+      }
+      
+      if (error) {
+        console.error('❌ Error loading notifications:', error);
+        throw error;
+      }
+      
+      const list = (data || []).map(n => ({ ...n }));
+      setNotifications(list);
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+      setNotifications([]);
+    }
+  };
+
+  // Load notifications when resident is available
+  useEffect(() => {
+    if (resident?.id) {
+      loadNotifications();
+      
+      // Set up real-time subscription for new notifications
+      const channel = supabase
+        .channel('notifications_changes')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${resident.id}`
+          },
+          (payload) => {
+            console.log('🔔 New notification received:', payload.new);
+            loadNotifications();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resident?.id]);
 
   const fetchRoutes = async () => {
     try {
@@ -153,6 +231,65 @@ export default function ScheduleScreen() {
     );
   };
 
+  const handleNotificationPress = () => {
+    const unreadCount = notifications?.filter(n => !n.is_read)?.length || 0;
+    
+    if (!notifications?.length) {
+      Alert.alert('Notifications', 'You are all caught up!');
+      return;
+    }
+    
+    // Show notifications list
+    const unreadNotifications = notifications.filter(n => !n.is_read);
+    const readNotifications = notifications.filter(n => n.is_read);
+    
+    if (unreadNotifications.length === 0) {
+      Alert.alert('Notifications', 'You have no new notifications.');
+      return;
+    }
+    
+    // Create a formatted list of notifications
+    const notificationList = unreadNotifications
+      .slice(0, 5)
+      .map((notif, idx) => {
+        const date = notif.created_at ? new Date(notif.created_at).toLocaleString() : 'Just now';
+        return `${idx + 1}. ${notif.title}\n   ${notif.message}\n   ${date}`;
+      })
+      .join('\n\n');
+    
+    const moreText = unreadNotifications.length > 5 
+      ? `\n\n...and ${unreadNotifications.length - 5} more notification${unreadNotifications.length - 5 > 1 ? 's' : ''}`
+      : '';
+    
+    Alert.alert(
+      `Notifications (${unreadCount} new)`,
+      notificationList + moreText,
+      [
+        {
+          text: 'Mark All as Read',
+          onPress: async () => {
+            // Mark all unread notifications as read
+            const unreadIds = unreadNotifications.map(n => n.notification_id);
+            if (unreadIds.length > 0) {
+              const { error } = await supabase
+                .from('notifications')
+                .update({ is_read: true })
+                .in('notification_id', unreadIds);
+              
+              if (!error) {
+                loadNotifications(); // Reload to update the badge
+              }
+            }
+          }
+        },
+        { text: 'OK' }
+      ]
+    );
+  };
+  
+  // Calculate unread notification count
+  const unreadNotificationCount = notifications?.filter(n => !n.is_read)?.length || 0;
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -177,15 +314,31 @@ export default function ScheduleScreen() {
             style={styles.logo}
           />
         </View>
-        <TouchableOpacity
-          style={styles.profileContainer}
-          onPress={() => setIsDropdownVisible(prev => !prev)}
-        >
-          <Image
-            source={resident?.profile_image_base64 ? { uri: resident.profile_image_base64 } : require('../../assets/images/icon.png')}
-            style={styles.profilePic}
-          />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.notificationButton}
+            onPress={handleNotificationPress}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="notifications-outline" size={22} color="#8BC500" />
+            {unreadNotificationCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.profileContainer}
+            onPress={() => setIsDropdownVisible(prev => !prev)}
+          >
+            <Image
+              source={resident?.profile_image_base64 ? { uri: resident.profile_image_base64 } : require('../../assets/images/icon.png')}
+              style={styles.profilePic}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {isDropdownVisible && (
@@ -243,7 +396,7 @@ export default function ScheduleScreen() {
                 onPress={() => setSelectedRouteId(r.id)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.selectorText, r.id === selectedRouteId && { color: '#fff' }]}>
+                <Text style={[styles.selectorText, r.id === selectedRouteId && { color: '#000000' }]}>
                   {r.route ? `Route ${r.route}` : 'Route'}
                 </Text>
               </TouchableOpacity>
@@ -328,6 +481,39 @@ const styles = StyleSheet.create({
     height: 40,
     width: 80,
     resizeMode: 'contain',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  notificationButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3F6EF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   profileContainer: {
     position: 'relative',

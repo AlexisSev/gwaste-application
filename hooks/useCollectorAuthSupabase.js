@@ -73,6 +73,8 @@ export const CollectorAuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await AsyncStorage.removeItem('collectors');
+      // Also clear remembered credentials on logout
+      await AsyncStorage.removeItem('rememberedCredentials');
       setCollector(null);
     } catch (error) {
       console.error('Error during logout:', error);

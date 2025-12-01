@@ -1,18 +1,20 @@
-import { Entypo } from "@expo/vector-icons";
+import { Entypo, Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  FlatList,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    FlatList,
+    Platform,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import FlashMessage, { showMessage } from "react-native-flash-message";
-import { useResidentAuth } from "../../hooks/useResidentAuth";
-import { getChatbotReply } from "../../services/gwasteChatbotService"; // Import the Edge Function service
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useResidentAuth } from "../hooks/useResidentAuth";
+import { getChatbotReply } from "../services/gwasteChatbotService"; // Import the Edge Function service
 
 const GwasteChatbot = () => {
   const router = useRouter();
@@ -242,8 +244,19 @@ const GwasteChatbot = () => {
   );
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <FlashMessage position="top" />
+      {/* Header with X button */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>G-Waste Chatbot</Text>
+        <TouchableOpacity
+          style={styles.closeButton}
+          onPress={() => router.push('/resident/residenthome')}
+          activeOpacity={0.7}
+        >
+          <Feather name="x" size={24} color="#333" />
+        </TouchableOpacity>
+      </View>
       <FlatList
         ref={flatListRef}
         contentContainerStyle={styles.listContent}
@@ -269,13 +282,36 @@ const GwasteChatbot = () => {
         </TouchableOpacity>
         {loading && <ActivityIndicator size="small" color="#8BC500" />}
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#ffffff", paddingTop: 50, paddingHorizontal: 12 },
-  listContent: { paddingBottom: 12 },
+  container: { flex: 1, backgroundColor: "#ffffff" },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    backgroundColor: '#ffffff',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listContent: { paddingBottom: 20, paddingHorizontal: 12, paddingTop: 8 },
   messageContainer: { paddingVertical: 4, paddingHorizontal: 6, marginVertical: 2 },
   messageText: {
     fontSize: 16,
@@ -302,7 +338,8 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: "#f6fbe8",
     borderRadius: 14,
-    marginBottom: 8,
+    marginBottom: Platform.OS === 'ios' ? 20 : 16,
+    marginHorizontal: 12,
     gap: 6,
     shadowColor: "#000",
     shadowOpacity: 0.08,
@@ -374,3 +411,4 @@ const styles = StyleSheet.create({
 });
 
 export default GwasteChatbot;
+

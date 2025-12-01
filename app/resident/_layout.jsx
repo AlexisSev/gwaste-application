@@ -1,16 +1,26 @@
-import { Ionicons } from '@expo/vector-icons';
-import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import { Tabs, usePathname } from 'expo-router';
-import { Platform } from 'react-native';
+import React from 'react';
+import FloatingTabBar from '../../components/FloatingTabBar';
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from '../../hooks/useColorScheme';
+
+const residentTabs = [
+  { key: 'home', route: '/resident/residenthome', icon: 'home' },
+  { key: 'map', route: '/resident/map', icon: 'map' },
+  { key: 'schedule', route: '/resident/schedule', icon: 'calendar' },
+  { key: 'categorize', route: '/resident/categorize', icon: 'grid' },
+];
 
 export default function ResidentTabLayout() {
   const colorScheme = useColorScheme();
   const pathname = usePathname();
 
   const hideTabBarRoutes = [
+    '/resident/login',
+    '/resident/landing',
     '/resident/signup',
+    '/collector/signup',
+    '/resident/GwasteChatbot',
   ];
 
   const shouldHideTabBar = hideTabBarRoutes.includes(pathname);
@@ -19,80 +29,65 @@ export default function ResidentTabLayout() {
     <>
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
-        tabBarStyle: shouldHideTabBar
-          ? { display: 'none' }
-          : Platform.select({
-              ios: { position: 'absolute' },
-              default: {},
-            }),
-        contentStyle: { backgroundColor: Colors[colorScheme ?? 'light'].background },
+        tabBarStyle: { display: 'none' },
+        contentStyle: {
+          backgroundColor: Colors[colorScheme ?? 'light'].background,
+          paddingBottom: 90,
+        },
       }}>
       <Tabs.Screen
         name="residenthome"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
         }}
       />
       <Tabs.Screen
         name="map"
         options={{
           title: 'Map',
-          tabBarIcon: ({ color }) => <TabBarIcon name="map" color={color} />,
         }}
       />
       <Tabs.Screen
         name="schedule"
         options={{
           title: 'Schedule',
-          tabBarIcon: ({ color }) => <TabBarIcon name="calendar" color={color} />,
         }}
       />
       <Tabs.Screen
         name="categorize"
         options={{
           title: 'Categorize',
-          tabBarIcon: ({ color }) => (
-            <FontAwesome5 name="recycle" size={27} color={color} style={{ marginBottom: -8 }} />
-          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          href: null, // This hides the tab from the tab bar
+          href: null, // This completely hides the tab from the tab bar
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          href: null, // This hides the tab from the tab bar
+          href: null, // This completely hides the tab from the tab bar
         }}
       />
       <Tabs.Screen
         name="report-issue"
         options={{
-          href: null, // This hides the tab from the tab bar
+          href: null, // This completely hides the tab from the tab bar
         }}
       />
-
       <Tabs.Screen
         name="GwasteChatbot"
         options={{
-          href: null, // This hides the tab from the tab bar
+          href: null, // This completely hides the tab from the tab bar
         }}
       />
     </Tabs>
-    
-    
+    {!shouldHideTabBar && <FloatingTabBar tabs={residentTabs} />}
     </>
   );
-}
-
-function TabBarIcon(props) {
-  return <Ionicons size={28} style={{ marginBottom: -3 }} {...props} />;
 }
 
 

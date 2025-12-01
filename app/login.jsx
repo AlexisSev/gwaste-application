@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { Lock, User } from 'lucide-react-native';
-import { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image as RNImage, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Image as RNImage, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '../components/ThemedText';
 import InputField from '../components/ui/InputField';
 import PrimaryButton from '../components/ui/PrimaryButton';
@@ -15,9 +16,83 @@ function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [rememberPassword, setRememberPassword] = useState(false);
   const router = useRouter();
   const { login: residentLogin } = useResidentAuth();
   const { login: collectorLogin } = useCollectorAuth();
+
+  // Load saved credentials on mount and auto-fill
+  useEffect(() => {
+    loadSavedCredentials();
+  }, []);
+
+  // Check if user is typing a different name and clear saved credentials
+  useEffect(() => {
+    const checkUserChange = async () => {
+      if (firstName.trim()) {
+        const isDifferent = await checkIfDifferentUser(firstName);
+        if (isDifferent) {
+          setPassword('');
+          setRememberPassword(false);
+        }
+      }
+    };
+    checkUserChange();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstName]);
+
+  const loadSavedCredentials = async () => {
+    try {
+      const saved = await AsyncStorage.getItem('rememberedCredentials');
+      if (saved) {
+        const credentials = JSON.parse(saved);
+        // Only auto-fill if we have valid credentials with user type
+        if (credentials.firstName && credentials.password && credentials.userType) {
+          setFirstName(credentials.firstName);
+          setPassword(credentials.password);
+          setRememberPassword(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading saved credentials:', error);
+    }
+  };
+
+  const saveCredentials = async (firstName, password, userType) => {
+    try {
+      const credentials = { firstName, password, userType };
+      await AsyncStorage.setItem('rememberedCredentials', JSON.stringify(credentials));
+    } catch (error) {
+      console.error('Error saving credentials:', error);
+    }
+  };
+
+  const checkIfDifferentUser = useCallback(async (firstName) => {
+    try {
+      const saved = await AsyncStorage.getItem('rememberedCredentials');
+      if (saved) {
+        const credentials = JSON.parse(saved);
+        // If saved firstName doesn't match current firstName, clear saved credentials
+        if (credentials.firstName && credentials.firstName.toLowerCase() !== firstName.toLowerCase()) {
+          await clearSavedCredentials();
+          return true;
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('Error checking saved user:', error);
+      return false;
+    }
+  }, []);
+
+  const clearSavedCredentials = async () => {
+    try {
+      await AsyncStorage.removeItem('rememberedCredentials');
+    } catch (error) {
+      console.error('Error clearing saved credentials:', error);
+    }
+  };
+
 
   const handleCollectorLogin = async () => {
     if (!firstName || !password) {
@@ -27,9 +102,24 @@ function LoginScreen() {
     
     setLoading(true);
     try {
+      // Check if a different user is trying to log in
+      const isDifferentUser = await checkIfDifferentUser(firstName);
+      if (isDifferentUser) {
+        // Clear form if different user
+        setRememberPassword(false);
+      }
+
       // Try resident login first using the auth hook
       try {
         const residentData = await residentLogin(firstName, password);
+        
+        // Save credentials if "Remember Password" is checked
+        if (rememberPassword) {
+          await saveCredentials(firstName, password, 'resident');
+        } else {
+          await clearSavedCredentials();
+        }
+        
         Alert.alert('Success', `Welcome, ${residentData.first_name}!`);
         router.replace('/resident');
         return;
@@ -39,6 +129,14 @@ function LoginScreen() {
 
       // Fall back to collector login
       const collectorData = await collectorLogin(firstName, password);
+      
+      // Save credentials if "Remember Password" is checked
+      if (rememberPassword) {
+        await saveCredentials(firstName, password, 'collector');
+      } else {
+        await clearSavedCredentials();
+      }
+      
       Alert.alert('Success', `Welcome back, ${collectorData.firstName}!`);
       router.replace('/collector/home');
     } catch (error) {
@@ -55,9 +153,14 @@ function LoginScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <ScrollView 
+        contentContainerStyle={styles.container} 
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         {/* Logo */}
         <RNImage source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
         <View style={styles.form}>
@@ -83,9 +186,22 @@ function LoginScreen() {
           style={styles.input}
         />
         
-        <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordContainer}>
-          <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-        </TouchableOpacity>
+        <View style={styles.optionsRow}>
+          <TouchableOpacity 
+            style={styles.rememberContainer}
+            onPress={() => setRememberPassword(!rememberPassword)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, rememberPassword && styles.checkboxChecked]}>
+              {rememberPassword && <Ionicons name="checkmark" size={10} color="#fff" />}
+            </View>
+            <Text style={styles.rememberText}>Remember password</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordContainer}>
+            <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+          </TouchableOpacity>
+        </View>
       
         <PrimaryButton onPress={handleCollectorLogin} style={styles.button} disabled={loading}>
           {loading ? (
@@ -96,7 +212,15 @@ function LoginScreen() {
         </PrimaryButton>
           <Text style={styles.link}>
             Don`t have an account?{" "}
-            <Text style={styles.linkText} onPress={() => router.replace('/signup')}>
+            <Text 
+              style={styles.linkText} 
+              onPress={() => {
+                Keyboard.dismiss();
+                setTimeout(() => {
+                  router.replace('/signup');
+                }, 100);
+              }}
+            >
               Sign up here
             </Text>
           </Text>
@@ -162,16 +286,48 @@ const styles = StyleSheet.create({
   },
   link: {
     color: '#666',
-    marginTop: 8,
+    marginTop: 12,
     textAlign: 'center',
+    fontSize: 15,
   },
   linkText: {
-    color: '#87CEEB',
+    color: '#2196F3',
+    fontWeight: '600',
+    fontSize: 15,
   },
-  forgotPasswordContainer: {
-    alignSelf: 'flex-end',
+  optionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
     marginTop: 4,
     marginBottom: 8,
+  },
+  rememberContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  checkbox: {
+    width: 12,
+    height: 12,
+    borderRadius: 2,
+    borderWidth: 2,
+    borderColor: '#8BC500',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  checkboxChecked: {
+    backgroundColor: '#8BC500',
+  },
+  rememberText: {
+    color: '#666',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  forgotPasswordContainer: {
+    // Removed alignSelf: 'flex-end' since it's in a flex row now
   },
   forgotPasswordText: {
     color: '#8BC500',
