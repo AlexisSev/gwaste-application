@@ -85,10 +85,14 @@ export const handleGeofenceExit = async (
     console.error('Error creating collection notification:', error);
   }
 
-  // Mark area as collected
+  // Mark area as collected (normalize name for consistent comparison)
   setCollectedAreas((prev) => {
     const next = new Set(prev);
-    if (areaName) next.add(areaName);
+    if (areaName) {
+      // Normalize area name (trim and lowercase) for consistent comparison
+      const normalized = String(areaName).trim().toLowerCase();
+      next.add(normalized);
+    }
     return next;
   });
 

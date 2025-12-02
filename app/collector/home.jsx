@@ -1,10 +1,12 @@
 /* eslint-disable react-hooks/exhaustive-deps */
+import { Picker } from '@react-native-picker/picker';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { AlertCircle, CheckCircle, Navigation, Truck } from 'lucide-react-native';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { GPS_CONFIG } from '../../constants/MapConfig';
 import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
 import { sendIprogSMS } from '../../services/otpService';
 import { supabase } from '../../services/supabaseClient';
@@ -27,6 +29,32 @@ export default function LandingScreen() {
   const [issueType, setIssueType] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [routeType, setRouteType] = useState(null);
+  
+  // Refs for tracking location updates to database
+  const lastDbUpdateRef = useRef(0);
+  const lastCoordsRef = useRef(null);
+  const locationSubscriptionRef = useRef(null);
+
+  // Common truck issue types
+  const commonTruckIssues = [
+    'Engine Problem',
+    'Flat Tire',
+    'Brake Issue',
+    'Battery Dead',
+    'Transmission Problem',
+    'Overheating',
+    'Fuel System Issue',
+    'Electrical Problem',
+    'Hydraulic System Failure',
+    'Compactor Not Working',
+    'Door/Mechanism Malfunction',
+    'AC/Climate Control Issue',
+    'Steering Problem',
+    'Suspension Issue',
+    'Exhaust System Problem',
+    'Other'
+  ];
 
   // All distinct area names in this collector's routes for today
   const routeAreas = useMemo(() => {
@@ -182,6 +210,57 @@ export default function LandingScreen() {
     return distance <= 100;
   };
 
+  // Update truck location in Supabase database (for admin map tracking)
+  const updateTruckLocation = async (coords) => {
+    if (!collector) {
+      return;
+    }
+
+    const collectorIdValue = collector?.collector_id || (collector?.id ? String(collector.id) : null);
+    if (!collectorIdValue) {
+      console.warn('Collector is missing collector_id/id; cannot upsert trucklocation.');
+      return;
+    }
+
+    try {
+      const basePayload = {
+        collector_id: collectorIdValue,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        updated_at: new Date().toISOString(),
+      };
+
+      let payload = { ...basePayload, route_type: routeType || null };
+      
+      let { error: upsertError } = await supabase
+        .from('trucklocation')
+        .upsert(payload, { onConflict: 'collector_id' });
+      
+      // If schema doesn't have route_type yet, retry without it
+      if (
+        upsertError &&
+        String(upsertError.message || '').toLowerCase().includes('column') &&
+        String(upsertError.message || '').toLowerCase().includes('route_type')
+      ) {
+        payload = { ...basePayload };
+        const retry = await supabase
+          .from('trucklocation')
+          .upsert(payload, { onConflict: 'collector_id' });
+        if (retry.error) {
+          console.error('Trucklocation upsert (retry without route_type) failed:', retry.error);
+        } else {
+          console.log('Truck location updated successfully (without route_type)');
+        }
+      } else if (upsertError) {
+        console.error('Supabase upsert to trucklocation failed:', upsertError);
+      } else {
+        console.log('✅ Truck location updated in database for admin map');
+      }
+    } catch (err) {
+      console.error('Unexpected error during trucklocation upsert:', err);
+    }
+  };
+
   // Mark area as collected (append to areas_collected text[] for today's record)
   const markAreaAsCollected = async (area, routeNumber, routeId) => {
     try {
@@ -268,7 +347,13 @@ export default function LandingScreen() {
           location: locationString,
           status: 'completed',
           collection_type: 'manual', // Manual collection method
-          waste_type: routeType || null // Waste type from routes.type (e.g., "Dili Malata", "MALATA")
+          waste_type: routeType || null,// Waste type from routes.type (e.g., "Dili Malata", "MALATA")
+          metadata: {
+            area_timestamps: {
+              [area]: new Date().toISOString() // Store exact time for this area
+            }
+          }
+
         };
         
         console.log('📝 Inserting collection:', {
@@ -411,6 +496,18 @@ export default function LandingScreen() {
             updatedAreas: updatedAreas
           });
           
+          // ✅ ADD THIS CODE HERE - Before updating the collection
+          // Get existing metadata to preserve it
+          const { data: currentCollection } = await supabase
+            .from('collections')
+            .select('metadata')
+            .eq('id', existing.id)
+            .single();
+          const existingMetadata = currentCollection?.metadata || {};
+          const areaTimestamps = existingMetadata.area_timestamps || {};
+          // Store the exact timestamp for this new area
+          areaTimestamps[exactAreaName] = new Date().toISOString(); // Current time when collected
+          
           console.log('📝 Preparing to update collection:', {
             existing_id: existing.id,
             current_areas: current,
@@ -430,7 +527,12 @@ export default function LandingScreen() {
               route_id: validRouteId || existing.route_id,
               waste_type: routeType || existing.waste_type,
               collection_type: 'manual',
-              collected_at: new Date().toISOString() // Update timestamp when adding new area
+              collected_at: new Date().toISOString(), // Update timestamp when adding new area
+              // ✅ Include metadata with per-area timestamps
+              metadata: {
+                ...existingMetadata,
+                area_timestamps: areaTimestamps
+              }
             };
             
             console.log('📝 Step 1: Updating metadata:', metadataUpdate);
@@ -452,7 +554,12 @@ export default function LandingScreen() {
             // Even if no route_id/routeType, still update collected_at and collection_type
             const metadataUpdate = {
               collection_type: 'manual',
-              collected_at: new Date().toISOString() // Update timestamp when adding new area
+              collected_at: new Date().toISOString(), // Update timestamp when adding new area
+              // ✅ Include metadata with per-area timestamps
+              metadata: {
+                ...existingMetadata,
+                area_timestamps: areaTimestamps
+              }
             };
             
             const { error: metadataErr } = await supabase
@@ -499,7 +606,13 @@ export default function LandingScreen() {
                   .from('collections')
                   .update({ 
                     areas_collected: finalAreas,
-                    collected_at: new Date().toISOString() // Update timestamp when adding new area
+                    collected_at: new Date().toISOString(), // Update timestamp when adding new area
+                    updated_at: new Date().toISOString(),
+                    // ✅ Include metadata with per-area timestamps
+                    metadata: {
+                      ...existingMetadata,
+                      area_timestamps: areaTimestamps
+                    }
                   })
                   .eq('id', existing.id);
                 
@@ -547,7 +660,13 @@ export default function LandingScreen() {
                       .from('collections')
                       .update({ 
                         areas_collected: [...retryAreas, exactAreaName],
-                        collected_at: new Date().toISOString() // Update timestamp when adding new area
+                        collected_at: new Date().toISOString(), // Update timestamp when adding new area
+                        updated_at: new Date().toISOString(),
+                        // ✅ Include metadata with per-area timestamps
+                        metadata: {
+                          ...existingMetadata,
+                          area_timestamps: areaTimestamps
+                        }
                       })
                       .eq('id', existing.id);
                   }
@@ -773,13 +892,213 @@ export default function LandingScreen() {
 
     setIsSubmitting(true);
     try {
-      // Here you can add code to submit to your backend/database
-      // For now, we'll just show a success message
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      
+      // Get current location if available
+      const locationString = currentLocation && currentLocation.latitude && currentLocation.longitude
+        ? `${currentLocation.latitude},${currentLocation.longitude}`
+        : null;
+
+      // Insert truck issue into database using RPC function (bypasses RLS)
+      const { data: insertedIssueId, error: insertError } = await supabase.rpc('insert_truck_issue', {
+        p_collector_id: collector?.id,
+        p_collector_name: collector?.firstName || collector?.driver || collector?.collector_name,
+        p_issue_type: issueType.trim(),
+        p_description: issueDescription.trim(),
+        p_location: locationString,
+        p_latitude: currentLocation?.latitude || null,
+        p_longitude: currentLocation?.longitude || null
+      });
+
+      if (insertError) {
+        console.error('Error inserting truck issue:', insertError);
+        throw insertError;
+      }
+
+      console.log('✅ Truck issue inserted successfully with ID:', insertedIssueId);
+
+      // Get route numbers from today's schedule
+      const routeNumbers = Array.from(new Set(
+        (todaysSchedule || [])
+          .map(item => item.routeNumber)
+          .filter(routeNum => routeNum != null)
+      ));
+      const routeNumbersText = routeNumbers.length > 0 
+        ? `Route ${routeNumbers.join(', Route ')}` 
+        : 'No route assigned';
+
+      // Get all residents in the collector's route areas
+      const areasArray = Array.from(routeAreas);
+      const notifications = [];
+
+      if (areasArray.length > 0) {
+        // Get residents for all route areas
+        const areaConditions = areasArray.map(area => 
+          `purok.ilike.%${area}%,resident_address.ilike.%${area}%`
+        ).join(',');
+
+        const { data: residents, error: residentsError } = await supabase
+          .from('residents')
+          .select('id, phone_number, purok, resident_address')
+          .or(areaConditions);
+
+        if (residentsError) {
+          console.error('❌ Error fetching residents:', residentsError);
+        } else if (residents && residents.length > 0) {
+          console.log(`📋 Found ${residents.length} residents in route areas`);
+
+          // Create notifications for all residents
+          residents.forEach(resident => {
+            if (resident.id) {
+              notifications.push({
+                user_id: resident.id,
+                title: 'Truck Issue Reported',
+                message: `A truck issue has been reported: ${issueType.trim()}. Collection may be delayed in your area.`,
+                area: areasArray.join(', '),
+                is_read: false,
+                created_at: new Date().toISOString()
+              });
+            }
+          });
+
+          // Insert resident notifications using RPC function
+          if (notifications.length > 0) {
+            console.log(`💾 Inserting ${notifications.length} resident notifications...`);
+            
+            const insertPromises = notifications.map(notification => 
+              supabase.rpc('insert_resident_notification', {
+                p_user_id: notification.user_id,
+                p_title: notification.title,
+                p_message: notification.message,
+                p_area: notification.area || null
+              })
+            );
+
+            const results = await Promise.allSettled(insertPromises);
+            const successful = results.filter(r => r.status === 'fulfilled' && !r.value.error).length;
+            const failed = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error)).length;
+
+            if (successful > 0) {
+              console.log(`✅ Successfully inserted ${successful} resident notifications`);
+            }
+            if (failed > 0) {
+              console.error(`❌ Failed to insert ${failed} resident notifications`);
+            }
+
+            // Send SMS notifications to residents based on phone_number
+            try {
+              // Filter residents with valid phone numbers
+              const residentsWithPhones = residents.filter(resident => 
+                resident.phone_number && 
+                String(resident.phone_number).trim() !== '' &&
+                resident.phone_number !== null
+              );
+
+              if (residentsWithPhones.length > 0) {
+                // Extract phone numbers
+                const phoneNumbers = residentsWithPhones.map(resident => 
+                  String(resident.phone_number).trim()
+                );
+
+                console.log(`📱 Sending SMS to ${phoneNumbers.length} residents with phone numbers`);
+
+                const smsMessage = `Alert: A truck issue has been reported (${issueType.trim()}) on ${routeNumbersText}. Collection may be delayed in your area. We apologize for any inconvenience. - G-Waste App`;
+                
+                const smsResult = await sendIprogSMS(smsMessage, phoneNumbers);
+                
+                if (smsResult.success) {
+                  console.log(`✅ SMS notifications sent to ${phoneNumbers.length} residents`);
+                } else {
+                  console.error('❌ Failed to send SMS notifications:', smsResult.error);
+                }
+              } else {
+                console.log('⚠️ No residents with valid phone numbers found');
+              }
+            } catch (smsError) {
+              console.error('Error sending SMS notifications:', smsError);
+            }
+          }
+        }
+      }
+
+      // Get route IDs
+      const routeIds = Array.from(new Set(
+        (todaysSchedule || [])
+          .map(item => item.routeId)
+          .filter(routeId => routeId != null)
+      ));
+
+      // Get route type (waste_type) from first route if available
+      let routeType = null;
+      if (routeIds.length > 0) {
+        try {
+          const { data: routeData } = await supabase
+            .from('routes')
+            .select('type')
+            .eq('id', routeIds[0])
+            .single();
+          
+          if (routeData?.type) {
+            routeType = routeData.type;
+          }
+        } catch (err) {
+          console.warn('⚠️ Could not fetch route type:', err);
+        }
+      }
+
+      // Get all areas from today's schedule
+      const allAreas = Array.from(routeAreas);
+
+      // Send admin notification with ALL required fields
+      const collectorName = collector?.firstName || collector?.driver || collector?.collector_name || 'Collector';
+      const adminNotification = {
+        // Required fields
+        notification_type: 'collection', // or 'truck_issue' if you want a different type
+        title: 'Truck Issue Reported',
+        message: `${collectorName} (${routeNumbersText}) reported a truck issue: ${issueType.trim()}. ${issueDescription.trim().substring(0, 100)}${issueDescription.trim().length > 100 ? '...' : ''}`,
+        
+        // Critical fields
+        collection_id: null, // No collection for truck issues
+        collector_name: collectorName,  // MUST NOT BE NULL
+        areas_collected: allAreas.length > 0 ? allAreas : ['Unknown'], // All areas from route
+        waste_type: routeType || null,
+        route_id: routeIds.length > 0 ? routeIds[0] : null, // Use first route ID
+        
+        // Standard fields
+        read: false,
+        
+        // Metadata
+        metadata: {
+          issue_type: issueType.trim(),
+          issue_description: issueDescription.trim(),
+          collector_name: collectorName,
+          route_numbers: routeNumbers,
+          route_ids: routeIds,
+          waste_type: routeType || null,
+          areas: allAreas,
+          location: locationString,
+          latitude: currentLocation?.latitude || null,
+          longitude: currentLocation?.longitude || null,
+          reported_at: new Date().toISOString()
+        },
+        
+        // Timestamps
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: adminError } = await supabase
+        .from('admin_notifications')
+        .insert([adminNotification]);
+
+      if (adminError) {
+        console.error('❌ Error inserting admin notification:', adminError);
+        console.error('❌ Notification data:', JSON.stringify(adminNotification, null, 2));
+      } else {
+        console.log('✅ Admin notification sent successfully');
+      }
+
       Alert.alert(
         'Issue Reported',
-        'Your truck issue has been reported. Support will contact you shortly.',
+        'Your truck issue has been reported. Residents and administrators have been notified. Support will contact you shortly.',
         [
           {
             text: 'OK',
@@ -804,8 +1123,42 @@ export default function LandingScreen() {
       
       console.log(`🔔 Notifying residents for area: "${area}", status: "${status}"`);
       
+      // Get route information - you need to get this from the schedule item
+      // For now, we'll try to get it from todaysSchedule
+      let routeId = null;
+      let routeNumber = null;
+      let routeType = null;
+      
+      // Find the route info from todaysSchedule
+      const scheduleItem = todaysSchedule.find(item => item.location === area);
+      if (scheduleItem) {
+        routeId = scheduleItem.routeId;
+        routeNumber = scheduleItem.routeNumber;
+      }
+      
+      // Get route type (waste_type) from routes table if routeId is available
+      if (routeId) {
+        try {
+          const { data: routeData, error: routeError } = await supabase
+            .from('routes')
+            .select('type, route')
+            .eq('id', routeId)
+            .single();
+          
+          if (!routeError && routeData) {
+            routeType = routeData.type;
+            if (!routeNumber && routeData.route) {
+              routeNumber = routeData.route;
+            }
+          }
+        } catch (err) {
+          console.warn('⚠️ Could not fetch route info:', err);
+        }
+      }
+      
+      const routeInfo = routeNumber ? ` (Route ${routeNumber})` : '';
+      
       // Get residents in the area to notify them (include phone_number for SMS)
-      // Match by both purok and resident_address to ensure we find all relevant residents
       const { data: residents, error: residentsError } = await supabase
         .from('residents')
         .select('id, phone_number, purok, resident_address')
@@ -813,19 +1166,10 @@ export default function LandingScreen() {
       
       if (residentsError) {
         console.error('❌ Error fetching residents:', residentsError);
-        // Continue to send admin notification even if resident fetch fails
       } else {
         console.log(`📋 Found ${residents?.length || 0} residents for area "${area}"`);
         
         if (residents && residents.length > 0) {
-          // Log found residents for debugging
-          console.log('📋 Residents found:', residents.map(r => ({
-            id: r.id,
-            purok: r.purok,
-            resident_address: r.resident_address,
-            has_phone: !!r.phone_number
-          })));
-          
           const title = status === 'approaching' 
             ? 'Truck Approaching' 
             : 'Collection Completed';
@@ -833,64 +1177,48 @@ export default function LandingScreen() {
           const message = status === 'approaching' 
             ? `Waste collection truck is approaching ${area}` 
             : `Waste collection completed in ${area}`;
-
+          
           // Create notifications for all residents in the area
-          // Use resident.id as user_id (foreign key references residents.id)
           residents.forEach(resident => {
             if (resident.id) {
               notifications.push({
-                user_id: resident.id, // Use id directly as it's the foreign key reference
+                user_id: resident.id,
                 title: title,
                 message: message,
                 area: area,
                 is_read: false,
                 created_at: new Date().toISOString()
               });
-            } else {
-              console.warn('⚠️ Skipping resident without id:', resident);
             }
           });
           
-          console.log(`📝 Prepared ${notifications.length} notifications to insert`);
-          
-          // Send SMS notifications to residents when collection is completed
+          // Send SMS notifications when collection is completed
           if (status === 'collected') {
             try {
-              // Get all valid phone numbers from residents
               const phoneNumbers = residents
                 .map(resident => resident.phone_number)
                 .filter(phone => phone && phone.trim() !== '');
-
+              
               if (phoneNumbers.length > 0) {
                 const smsMessage = `Hello! Waste collection has been completed in ${area}. Thank you for your cooperation! - G-Waste App`;
                 
-                // Send SMS via IPROGSMS
                 const smsResult = await sendIprogSMS(smsMessage, phoneNumbers);
                 
                 if (smsResult.success) {
                   console.log(`✅ SMS notifications sent to ${phoneNumbers.length} residents in ${area}`);
                 } else {
-                  console.error('❌ Failed to send SMS notifications to residents:', smsResult.error);
+                  console.error('❌ Failed to send SMS notifications:', smsResult.error);
                 }
-              } else {
-                console.log(`⚠️ No valid phone numbers found for residents in ${area}`);
               }
             } catch (smsError) {
-              console.error('Error sending SMS notifications to residents:', smsError);
-              // Don't throw - we still want to continue with in-app notifications
+              console.error('Error sending SMS notifications:', smsError);
             }
           }
-        } else {
-          console.log(`⚠️ No residents found for area "${area}". Check if purok or resident_address matches.`);
         }
       }
-
-      // Insert resident notifications using RPC function to bypass RLS
+      
+      // Insert resident notifications using RPC function
       if (notifications.length > 0) {
-        console.log(`💾 Inserting ${notifications.length} notifications into database...`);
-        console.log('📋 Sample notification:', notifications[0]);
-        
-        // Use RPC function to insert notifications (bypasses RLS)
         const insertPromises = notifications.map(notification => 
           supabase.rpc('insert_resident_notification', {
             p_user_id: notification.user_id,
@@ -904,46 +1232,71 @@ export default function LandingScreen() {
         const successful = results.filter(r => r.status === 'fulfilled' && !r.value.error).length;
         const failed = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error)).length;
         
-        if (failed > 0) {
-          console.error(`❌ Failed to insert ${failed} out of ${notifications.length} notifications`);
-          results.forEach((result, index) => {
-            if (result.status === 'rejected' || (result.status === 'fulfilled' && result.value.error)) {
-              console.error(`❌ Failed notification ${index + 1}:`, 
-                result.status === 'rejected' ? result.reason : result.value.error);
-            }
-          });
-        }
-        
         if (successful > 0) {
           console.log(`✅ Successfully inserted ${successful} resident notifications`);
         }
-      } else {
-        console.log('⚠️ No notifications to insert (no residents found or no valid user_ids)');
+        if (failed > 0) {
+          console.error(`❌ Failed to insert ${failed} resident notifications`);
+        }
       }
-
-      // ALWAYS send admin notification to admin_notifications table
-      // This should be sent regardless of whether residents are found
-      const adminNotification = {
-        title: status === 'approaching' 
-          ? 'Truck Approaching Area' 
-          : 'Area Collection Completed',
-        message: status === 'approaching'
-          ? `${collector?.firstName || collector?.driver || 'Collector'} is approaching ${area}`
-          : `${collector?.firstName || collector?.driver || 'Collector'} has completed collection in ${area}`,
-        read: false,
-        created_at: new Date().toISOString()
-      };
-
-      const { error: adminError } = await supabase
-        .from('admin_notifications')
-        .insert([adminNotification]);
       
-      if (adminError) {
-        console.error('Error inserting admin notification:', adminError);
-        // Don't throw - we still want to continue even if admin notification fails
-      } else {
-        console.log('✅ Admin notification sent successfully');
+      // ============================================================================
+      // Admin notification - Only for "approaching" status
+      // ============================================================================
+      // NOTE: For "collected" status, admin notifications are automatically created
+      // by the database trigger when a collection is inserted/updated.
+      // We only need to create admin notifications for "approaching" status here.
+      
+      if (status === 'approaching') {
+        const collectorName = collector?.firstName || collector?.driver || collector?.name || 'Collector';
+        
+        // Create admin notification for truck approaching (not handled by database trigger)
+        const adminNotification = {
+          notification_type: 'collection',
+          title: 'Truck Approaching Area',
+          message: `${collectorName} is approaching ${area}${routeInfo}`,
+          
+          // Critical fields
+          collection_id: null,  // No collection yet for approaching
+          collector_name: collectorName,        // MUST NOT BE NULL
+          areas_collected: [area],              // MUST NOT BE NULL - single area as array (text[])
+          waste_type: routeType || null,        // Waste type from route
+          route_id: routeId || null,            // Route ID
+          
+          // Standard fields
+          read: false,
+          
+          // Metadata with additional info
+          metadata: {
+            area: area,
+            collector_name: collectorName,
+            waste_type: routeType || null,
+            route_id: routeId || null,
+            route_number: routeNumber || null,
+            status: 'approaching'
+          },
+          
+          // Timestamps
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        const { error: adminError } = await supabase
+          .from('admin_notifications')
+          .insert([adminNotification]);
+        
+        if (adminError) {
+          console.error('❌ Error inserting admin notification:', adminError);
+          console.error('❌ Notification data:', JSON.stringify(adminNotification, null, 2));
+        } else {
+          console.log('✅ Admin notification sent successfully for truck approaching');
+        }
+      } else if (status === 'collected') {
+        // For "collected" status, the database trigger will automatically create
+        // "Area Collection Completed" notifications when the collection is inserted/updated
+        console.log('✅ Collection marked - database trigger will create admin notification automatically');
       }
+      
     } catch (error) {
       console.error('Error sending notification:', error);
     }
@@ -957,23 +1310,60 @@ export default function LandingScreen() {
     }
 
     // Get initial location
-    await getCurrentLocation();
+    const initialLocation = await getCurrentLocation();
+    if (initialLocation) {
+      // Update database immediately with initial location
+      await updateTruckLocation(initialLocation);
+      lastDbUpdateRef.current = Date.now();
+      lastCoordsRef.current = initialLocation;
+    }
 
     // Start watching position
     const subscription = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.High,
-        timeInterval: 10000, // Check every 10 seconds
-        distanceInterval: 10, // Check every 10 meters
+        timeInterval: GPS_CONFIG.timeInterval || 10000, // Use GPS_CONFIG or default to 10 seconds
+        distanceInterval: GPS_CONFIG.distanceInterval || 10, // Use GPS_CONFIG or default to 10 meters
       },
       async (location) => {
-        setCurrentLocation(location.coords);
+        const coords = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        };
+
+        setCurrentLocation(coords);
+
+        // Check if coordinates have actually changed
+        const coordsChanged = !lastCoordsRef.current || 
+          Math.abs(lastCoordsRef.current.latitude - coords.latitude) > 0.0001 ||
+          Math.abs(lastCoordsRef.current.longitude - coords.longitude) > 0.0001;
+
+        if (coordsChanged) {
+          lastCoordsRef.current = coords;
+        }
+
+        // Update trucklocation in database (throttled to reduce data usage)
+        const now = Date.now();
+        const dbUpdateInterval = GPS_CONFIG.dbUpdateInterval || 10000; // Default 10 seconds
+        const timeSinceLastUpdate = now - lastDbUpdateRef.current;
         
-        // Check geofence for each area in today's schedule
+        // Always update on first location, if coordinates changed significantly, or if enough time has passed
+        const shouldUpdate = lastDbUpdateRef.current === 0 || 
+                            timeSinceLastUpdate >= dbUpdateInterval ||
+                            (coordsChanged && timeSinceLastUpdate >= 3000); // Update every 3s if moving
+        
+        if (shouldUpdate) {
+          lastDbUpdateRef.current = now;
+          try {
+            await updateTruckLocation(coords);
+          } catch (err) {
+            console.error('Failed to update truck location in database:', err);
+          }
+        }
+        
+        // Geofence checking for automatic collection
         for (const scheduleItem of todaysSchedule) {
           if (!collectedAreas.has(scheduleItem.location)) {
-            // For demo purposes, we'll use a mock coordinate
-            // In real implementation, you'd get actual coordinates from your database
             const mockCoordinates = {
               latitude: 14.5995 + (Math.random() - 0.5) * 0.01,
               longitude: 120.9842 + (Math.random() - 0.5) * 0.01
@@ -984,8 +1374,6 @@ export default function LandingScreen() {
             if (isInGeofence) {
               // Notify residents that truck is approaching
               await notifyResidents(scheduleItem.location, 'approaching');
-              
-              // Mark as collected after a short delay (simulating collection time)
               setTimeout(async () => {
                 await markAreaAsCollected(scheduleItem.location, scheduleItem.routeNumber, scheduleItem.routeId);
               }, 30000); // 30 seconds delay
@@ -995,6 +1383,7 @@ export default function LandingScreen() {
       }
     );
 
+    locationSubscriptionRef.current = subscription;
     return subscription;
   };
 
@@ -1066,6 +1455,12 @@ export default function LandingScreen() {
             .eq('driver', collector.driver)
             .eq('status', 'active'); // Only get active routes
           if (error) throw error;
+          
+          // Fetch route type for trucklocation updates
+          if (routesData && routesData.length > 0) {
+            setRouteType(routesData[0]?.type || null);
+          }
+          
           // assignedRoutes and areasCollected removed as they were unused in UI
           let scheduleList = [];
           let routeNameList = [];
@@ -1191,10 +1586,27 @@ export default function LandingScreen() {
 
   // Start location tracking when component mounts
   useEffect(() => {
-    if (collector && todaysSchedule.length > 0) {
-      startLocationTracking();
+    let isMounted = true;
+    
+    if (collector) {
+      startLocationTracking().then((subscription) => {
+        if (isMounted && subscription) {
+          locationSubscriptionRef.current = subscription;
+        }
+      }).catch((error) => {
+        console.error('Error starting location tracking:', error);
+      });
     }
-  }, [collector, todaysSchedule]);
+    
+    // Cleanup: Remove location subscription when component unmounts
+    return () => {
+      isMounted = false;
+      if (locationSubscriptionRef.current) {
+        locationSubscriptionRef.current.remove();
+        locationSubscriptionRef.current = null;
+      }
+    };
+  }, [collector]);
 
 
   const handleLogout = async () => {
@@ -1361,7 +1773,7 @@ export default function LandingScreen() {
                       }
                     }}
                     disabled={isCollected}
-                    activeOpacity={isCollected ? 1 : 0.7}
+                    activeOpacity={isCollected ? 1 : 0.6}
                   >
                     <View style={styles.scheduleTimeContainer}>
                       <Text style={[
@@ -1497,13 +1909,19 @@ export default function LandingScreen() {
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Issue Type *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g., Engine problem, Flat tire, Brake issue"
-                  value={issueType}
-                  onChangeText={setIssueType}
-                  placeholderTextColor="#999"
-                />
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={issueType}
+                    onValueChange={(itemValue) => setIssueType(itemValue)}
+                    style={styles.picker}
+                    dropdownIconColor="#666"
+                  >
+                    <Picker.Item label="Select issue type..." value="" />
+                    {commonTruckIssues.map((issue, index) => (
+                      <Picker.Item key={index} label={issue} value={issue} />
+                    ))}
+                  </Picker>
+                </View>
               </View>
 
               <View style={styles.formGroup}>
@@ -1647,12 +2065,19 @@ const styles = StyleSheet.create({
     marginBottom: 12, 
     alignItems: 'flex-start', 
     minHeight: 80,
-    borderWidth: 1,
-    borderColor: '#E0E0E0'
+    borderWidth: 1.5,
+    borderColor: '#D0D0D0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
   },
   scheduleItemCollected: {
     backgroundColor: '#2E7D32',
-    borderColor: '#1B5E20'
+    borderColor: '#1B5E20',
+    shadowOpacity: 0.12,
+    elevation: 4,
   },
   scheduleTimeContainer: { flexDirection: 'column', alignItems: 'flex-start', marginRight: 16, minWidth: 110 },
   scheduleTime: { fontSize: 14, color: '#000000', fontWeight: 'bold', marginBottom: 2 },
@@ -1838,6 +2263,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#111827',
     backgroundColor: '#FFFFFF',
+  },
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  picker: {
+    height: 50,
+    color: '#111827',
   },
   textArea: {
     height: 120,

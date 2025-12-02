@@ -38,7 +38,7 @@ export const formatTime = (timeString) => {
     const ampm = hour >= 12 ? 'PM' : 'AM';
     const displayHour = hour % 12 || 12;
     return `${displayHour}:${minutes} ${ampm}`;
-  } catch (error) {
+  } catch (_error) {
     return timeString;
   }
 };
@@ -129,8 +129,8 @@ export const generateTimeIntervals = (startTime, endTime, areasInput) => {
  */
 export const findScheduleEntryByLocation = (locationName, schedule) => {
   if (!locationName) return null;
-  const name = String(locationName).trim();
-  return (schedule || []).find((s) => String(s.location).trim() === name) || null;
+  const name = String(locationName).trim().toLowerCase();
+  return (schedule || []).find((s) => String(s.location).trim().toLowerCase() === name) || null;
 };
 
 /**
@@ -144,10 +144,18 @@ export const computeNextUncollected = (schedule, collected) => {
   const now = new Date();
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const currentMins = toMinutes(currentTime);
+  
+  // Helper function to normalize area names for comparison
+  const normalizeAreaName = (name) => String(name || '').trim().toLowerCase();
+  const normalizedCollected = new Set();
+  if (collected && collected.size > 0) {
+    collected.forEach(area => normalizedCollected.add(normalizeAreaName(area)));
+  }
+  
   let candidate = null;
   for (let i = 0; i < schedule.length; i++) {
     const it = schedule[i];
-    if (collected.has(it.location)) continue;
+    if (normalizedCollected.has(normalizeAreaName(it.location))) continue;
     const startM = toMinutes(it.time);
     if (startM == null) continue;
     if (currentMins <= startM) {
@@ -174,34 +182,90 @@ export const updateCurrentAndNextAreas = (schedule, collectedAreas) => {
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const currentMins = toMinutes(currentTime);
   
-  // Find current area (if we're within its time range)
+  // Helper function to normalize area names for comparison (case-insensitive, trimmed)
+  const normalizeAreaName = (name) => {
+    return String(name || '').trim().toLowerCase();
+  };
+  
+  // Create a normalized set of collected areas for comparison
+  const normalizedCollected = new Set();
+  if (collectedAreas && collectedAreas.size > 0) {
+    collectedAreas.forEach(area => {
+      normalizedCollected.add(normalizeAreaName(area));
+    });
+  }
+  
+  // Filter out collected areas (case-insensitive comparison)
+  const uncollectedSchedule = schedule.filter(item => {
+    const normalizedLocation = normalizeAreaName(item.location);
+    return !normalizedCollected.has(normalizedLocation);
+  });
+  
+  if (uncollectedSchedule.length === 0) {
+    return { current: null, next: null };
+  }
+  
   let current = null;
   let next = null;
   
-  for (let i = 0; i < schedule.length; i++) {
-    const item = schedule[i];
-    const isCollected = collectedAreas.has(item.location);
+  // Strategy 1: Find current area based on time window (if we're within its scheduled time)
+  for (let i = 0; i < uncollectedSchedule.length; i++) {
+    const item = uncollectedSchedule[i];
+    const startM = toMinutes(item.time);
+    let endM = toMinutes(item.endTime);
+    if (endM == null) {
+      endM = (startM || 0) + 90; // assume 90 mins window if end missing
+    }
     
-    if (!isCollected) {
-      const startM = toMinutes(item.time);
-      let endM = toMinutes(item.endTime);
-      if (endM == null) {
-        endM = (startM || 0) + 90; // assume 90 mins window if end missing
+    if (startM != null && currentMins >= startM && currentMins <= endM) {
+      current = item;
+      // Next area is the one after current
+      if (i + 1 < uncollectedSchedule.length) {
+        next = uncollectedSchedule[i + 1];
       }
-      if (!current && startM != null && currentMins >= startM && currentMins <= endM) {
-        current = item;
-      } else if (!next && startM != null && currentMins < startM) {
-        next = item;
-        break;
-      }
+      break;
     }
   }
   
-  // If no current area found, the next uncollected area becomes next
-  if (!current && !next) {
-    const uncollectedAreas = schedule.filter(item => !collectedAreas.has(item.location));
-    if (uncollectedAreas.length > 0) {
-      next = uncollectedAreas[0];
+  // Strategy 2: If no current area found by time window, determine based on schedule order
+  // This handles cases where driver completes areas early, late, or is between time windows
+  if (!current) {
+    // Find areas that have started (current time >= start time)
+    const startedAreas = uncollectedSchedule.filter(item => {
+      const startM = toMinutes(item.time);
+      return startM != null && currentMins >= startM;
+    });
+    
+    // Find areas that haven't started yet (future areas)
+    const futureAreas = uncollectedSchedule.filter(item => {
+      const startM = toMinutes(item.time);
+      return startM != null && currentMins < startM;
+    });
+    
+    if (startedAreas.length > 0) {
+      // We have areas that should have started - use the first one as current (catch-up mode)
+      current = startedAreas[0];
+      // Next is either the next started area or first future area
+      if (startedAreas.length > 1) {
+        next = startedAreas[1];
+      } else if (futureAreas.length > 0) {
+        next = futureAreas[0];
+      } else if (uncollectedSchedule.length > 1) {
+        // Fallback: next uncollected in schedule order
+        const currentIndex = uncollectedSchedule.findIndex(item => item.location === current.location);
+        if (currentIndex >= 0 && currentIndex + 1 < uncollectedSchedule.length) {
+          next = uncollectedSchedule[currentIndex + 1];
+        }
+      }
+    } else if (futureAreas.length > 0) {
+      // No areas have started yet - first future area is next
+      next = futureAreas[0];
+    } else if (uncollectedSchedule.length > 0) {
+      // Fallback: use first uncollected area as current (shouldn't happen normally)
+      current = uncollectedSchedule[0];
+      if (uncollectedSchedule.length > 1) {
+        next = uncollectedSchedule[1];
+      }
     }
   }
   

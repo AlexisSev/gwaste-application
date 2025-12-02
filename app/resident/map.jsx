@@ -80,9 +80,10 @@ export default function MapScreen() {
             const marker = L.marker([c.latitude, c.longitude], {
               icon: L.divIcon({
                 className: 'custom-icon',
-                html: "🚛",
-                iconSize: [24, 24],
-                iconAnchor: [12, 12],
+                html: '<div style="font-size: 28px; line-height: 1; text-align: center; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">🚛</div>',
+                iconSize: [28, 28],
+                iconAnchor: [14, 28],
+                popupAnchor: [0, -28]
               })
             }).addTo(window.map);
             
@@ -594,6 +595,11 @@ export default function MapScreen() {
             .custom-icon {
               background: transparent;
               border: none;
+              text-align: center;
+              line-height: 1;
+              display: flex;
+              align-items: center;
+              justify-content: center;
             }
             .user-marker { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
             .user-label { font-size: 12px; font-weight: 700; color: #2E7D32; }

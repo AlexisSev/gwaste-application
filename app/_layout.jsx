@@ -40,7 +40,8 @@ export default function RootLayout() {
     <CollectorAuthProvider>
       <ResidentAuthProvider>
       <ThemeProvider value={colorScheme === 'light' ? DarkTheme : DefaultTheme}>
-        <Stack initialRouteName="index">
+        <Stack initialRouteName="splashscreen">
+          <Stack.Screen name="splashscreen" options={{ headerShown: false }} />
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="landing" options={{ title: 'Landing Page', headerShown: false }} />
           <Stack.Screen name="login" options={{ title: 'Log In', headerShown: false }} />

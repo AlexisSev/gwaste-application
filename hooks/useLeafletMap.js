@@ -1,6 +1,5 @@
 // hooks/useLeafletMap.js
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Image } from 'react-native';
 import {
   AREA_COORDINATES,
   BOGO_CITY_BOUNDS,
@@ -11,7 +10,6 @@ import {
   NOMINATIM_CONFIG,
   OSM_TILE_LAYER,
   OSRM_ROUTING_URL,
-  TRUCK_MARKER,
 } from '../constants/MapConfig';
 
 /**
@@ -29,16 +27,6 @@ export const useLeafletMap = (driverLabel) => {
    * Generate HTML content for Leaflet map
    */
   const getMapHtml = useCallback(() => {
-    // Get the asset URI - handle both native and web environments
-    let truckIconUri;
-    try {
-      // Try native resolveAssetSource first
-      truckIconUri = Image.resolveAssetSource(TRUCK_MARKER.iconUrl).uri;
-    } catch (e) {
-      // Fallback for web environment - use the asset directly
-      truckIconUri = TRUCK_MARKER.iconUrl;
-    }
-    
     return `<!doctype html>
       <html>
         <head>
@@ -50,6 +38,11 @@ export const useLeafletMap = (driverLabel) => {
             .custom-icon {
               background: transparent;
               border: none;
+              text-align: center;
+              line-height: 1;
+              display: flex;
+              align-items: center;
+              justify-content: center;
             }
           </style>
         </head>
@@ -75,11 +68,12 @@ export const useLeafletMap = (driverLabel) => {
 
             // Create marker with smooth animation
             window.marker = L.marker([${DEFAULT_LOCATION.latitude}, ${DEFAULT_LOCATION.longitude}], {
-              icon: L.icon({
-                iconUrl: '${truckIconUri}',
-                iconSize: [${TRUCK_MARKER.iconSize[0]}, ${TRUCK_MARKER.iconSize[1]}],
-                iconAnchor: [${TRUCK_MARKER.iconAnchor[0]}, ${TRUCK_MARKER.iconAnchor[1]}],
-                popupAnchor: [0, -18]
+              icon: L.divIcon({
+                className: 'custom-icon',
+                html: '<div style="font-size: 28px; line-height: 1; text-align: center; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">🚛</div>',
+                iconSize: [28, 28],
+                iconAnchor: [14, 28],
+                popupAnchor: [0, -28]
               })
             }).addTo(window.map).bindPopup("You (${driverLabel.replace(/"/g, '\\"')})");
 
@@ -112,25 +106,17 @@ export const useLeafletMap = (driverLabel) => {
       pendingLocationRef.current = null;
     }
 
-    // Get the asset URI - handle both native and web environments
-    let truckIconUri;
-    try {
-      // Try native resolveAssetSource first
-      truckIconUri = Image.resolveAssetSource(TRUCK_MARKER.iconUrl).uri;
-    } catch (e) {
-      // Fallback for web environment - use the asset directly
-      truckIconUri = TRUCK_MARKER.iconUrl;
-    }
     const script = `
       try {
         if (window.marker && window.map) {
           // Ensure icon is properly set
-          if (!window.marker.getIcon() || !window.marker.getIcon().options.iconUrl) {
-            window.marker.setIcon(L.icon({
-              iconUrl: '${truckIconUri}',
-              iconSize: [${TRUCK_MARKER.iconSize[0]}, ${TRUCK_MARKER.iconSize[1]}],
-              iconAnchor: [${TRUCK_MARKER.iconAnchor[0]}, ${TRUCK_MARKER.iconAnchor[1]}],
-              popupAnchor: [0, -18]
+          if (!window.marker.getIcon() || !window.marker.getIcon().options.html) {
+            window.marker.setIcon(L.divIcon({
+              className: 'custom-icon',
+              html: '<div style="font-size: 28px; line-height: 1; text-align: center; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">🚛</div>',
+              iconSize: [28, 28],
+              iconAnchor: [14, 28],
+              popupAnchor: [0, -28]
             }));
           }
           // Smooth animation to new position
@@ -176,24 +162,16 @@ export const useLeafletMap = (driverLabel) => {
   const setInitialMarkerPosition = useCallback((lat, lng) => {
     if (!webviewRef.current || !mapInitialized) return;
 
-    // Get the asset URI - handle both native and web environments
-    let truckIconUri;
-    try {
-      // Try native resolveAssetSource first
-      truckIconUri = Image.resolveAssetSource(TRUCK_MARKER.iconUrl).uri;
-    } catch (e) {
-      // Fallback for web environment - use the asset directly
-      truckIconUri = TRUCK_MARKER.iconUrl;
-    }
     const script = `
       if (window.marker && window.map) {
         // Update icon if not set properly
-        if (!window.marker.getIcon() || !window.marker.getIcon().options.iconUrl) {
-          window.marker.setIcon(L.icon({
-            iconUrl: '${truckIconUri}',
-            iconSize: [${TRUCK_MARKER.iconSize[0]}, ${TRUCK_MARKER.iconSize[1]}],
-            iconAnchor: [${TRUCK_MARKER.iconAnchor[0]}, ${TRUCK_MARKER.iconAnchor[1]}],
-            popupAnchor: [0, -18]
+        if (!window.marker.getIcon() || !window.marker.getIcon().options.html) {
+          window.marker.setIcon(L.divIcon({
+            className: 'custom-icon',
+            html: '<div style="font-size: 28px; line-height: 1; text-align: center; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">🚛</div>',
+            iconSize: [28, 28],
+            iconAnchor: [14, 28],
+            popupAnchor: [0, -28]
           }));
         }
         // Set initial position without animation

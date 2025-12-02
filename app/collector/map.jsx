@@ -87,6 +87,56 @@ export default function CollectorMapScreen() {
   });
 
   /**
+   * Load previously collected areas from database
+   */
+  const loadCollectedAreas = async () => {
+    try {
+      if (!collector?.id) return;
+      
+      const today = new Date().toISOString().split('T')[0];
+      
+      const { data, error } = await supabase
+        .from('collections')
+        .select('areas_collected')
+        .eq('collector_id', collector.id)
+        .eq('collected_date', today);
+      
+      if (error) {
+        console.error('Error loading collected areas:', error);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        return;
+      }
+      
+      // Aggregate all areas_collected arrays across rows (if multiple)
+      // Store normalized names (lowercase, trimmed) for consistent comparison
+      const collectedSet = new Set();
+      data.forEach(row => {
+        const arr = Array.isArray(row.areas_collected) ? row.areas_collected : [];
+        arr.forEach(a => { 
+          if (a) {
+            // Normalize area name (trim and lowercase) for consistent comparison
+            const normalized = String(a).trim().toLowerCase();
+            collectedSet.add(normalized);
+          }
+        });
+      });
+      
+      // Update collected areas state
+      setCollectedAreas(collectedSet);
+      console.log('✅ Loaded collected areas from database:', Array.from(collectedSet));
+      console.log('📊 Total collected areas:', collectedSet.size);
+      
+      // Note: updateAreas() will be called automatically when collectedAreas state changes
+      // via the useEffect hook, so we don't need to manually update here
+    } catch (error) {
+      console.error('Error loading collected areas:', error);
+    }
+  };
+
+  /**
    * Load schedule data from Supabase
    */
   const loadScheduleData = async () => {
@@ -111,15 +161,44 @@ export default function CollectorMapScreen() {
       }
 
       setTodaysSchedule(scheduleList);
-      const { current, next } = updateCurrentAndNextAreas(scheduleList, collectedAreas);
-      setCurrentArea(current);
-      setNextArea(next);
+      
+      // Load collected areas after schedule is loaded
+      await loadCollectedAreas();
+      
+      // Note: updateAreas() will be called automatically when collectedAreas changes
+      // via the useEffect hook, so we don't need to call it here
     } catch (error) {
       console.error('Error loading schedule data:', error);
       setTodaysSchedule([]);
       setCurrentArea(null);
       setNextArea(null);
     }
+  };
+
+  /**
+   * Check if all areas are collected
+   */
+  const areAllAreasCollected = () => {
+    if (todaysSchedule.length === 0) return false;
+    
+    // Helper function to normalize area names
+    const normalizeAreaName = (name) => String(name || '').trim().toLowerCase();
+    
+    // Check if all schedule areas are in collectedAreas
+    const allCollected = todaysSchedule.every(item => {
+      const normalizedLocation = normalizeAreaName(item.location);
+      let isCollected = false;
+      if (collectedAreas && collectedAreas.size > 0) {
+        collectedAreas.forEach(area => {
+          if (normalizeAreaName(area) === normalizedLocation) {
+            isCollected = true;
+          }
+        });
+      }
+      return isCollected;
+    });
+    
+    return allCollected;
   };
 
   /**
@@ -130,6 +209,13 @@ export default function CollectorMapScreen() {
       const { current, next } = updateCurrentAndNextAreas(todaysSchedule, collectedAreas);
       setCurrentArea(current);
       setNextArea(next);
+      console.log('🔄 Updated areas:', { 
+        current: current?.location || 'None', 
+        next: next?.location || 'None',
+        collectedCount: collectedAreas.size,
+        totalAreas: todaysSchedule.length,
+        allCollected: areAllAreasCollected()
+      });
     }
   };
 
@@ -166,6 +252,55 @@ export default function CollectorMapScreen() {
       loadScheduleData();
     }
   }, [collector, authLoading]);
+
+  // Also reload collected areas when collector changes
+  useEffect(() => {
+    if (collector && !authLoading) {
+      loadCollectedAreas();
+    }
+  }, [collector?.id]);
+
+  // Subscribe to real-time updates from collections table
+  // This ensures the map screen updates immediately when areas are marked as collected
+  useEffect(() => {
+    if (!collector?.id) return;
+
+    console.log('🔔 Setting up real-time subscription for collector:', collector.id);
+
+    const channel = supabase
+      .channel(`collections-updates-${collector.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'collections',
+          filter: `collector_id=eq.${collector.id}`,
+        },
+        (payload) => {
+          console.log('📦 Collection updated in real-time:', payload);
+          console.log('🔄 Reloading collected areas...');
+          // Reload collected areas when collections table changes
+          // Add a small delay to ensure database is fully updated
+          setTimeout(() => {
+            loadCollectedAreas();
+          }, 500);
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Real-time subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to collections updates');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Error subscribing to collections updates');
+        }
+      });
+
+    return () => {
+      console.log('🔕 Unsubscribing from collections updates');
+      supabase.removeChannel(channel);
+    };
+  }, [collector?.id]);
 
   // Update current and next areas every minute and when collected areas change
   useEffect(() => {
@@ -246,37 +381,50 @@ export default function CollectorMapScreen() {
       )}
 
       <View style={styles.floatingCard}>
-        <View style={styles.areaContainer}>
-          <View style={styles.areaColumn}>
-            <Text style={styles.areaTitle}>Current Area</Text>
-            {currentArea ? (
-              <View>
-                <Text style={styles.areaName}>{currentArea.location}</Text>
-                <Text style={styles.areaTime}>
-                  {formatTime(currentArea.time)} - {formatTime(currentArea.endTime)}
-                </Text>
-                <Text style={styles.areaRoute}>Route {currentArea.routeNumber}</Text>
-              </View>
-            ) : (
-              <Text style={styles.noAreaText}>No current area</Text>
-            )}
+        {areAllAreasCollected() ? (
+          <View style={styles.completedContainer}>
+            <Text style={styles.completedIcon}>✅</Text>
+            <Text style={styles.completedTitle}>Completed Collections for Today</Text>
+            <Text style={styles.completedSubtitle}>
+              All {todaysSchedule.length} area{todaysSchedule.length !== 1 ? 's' : ''} have been collected
+            </Text>
+            <Text style={styles.completedMessage}>
+              Great job! You&apos;ve finished all scheduled collections for today.
+            </Text>
           </View>
+        ) : (
+          <View style={styles.areaContainer}>
+            <View style={styles.areaColumn}>
+              <Text style={styles.areaTitle}>Current Area</Text>
+              {currentArea ? (
+                <View>
+                  <Text style={styles.areaName}>{currentArea.location}</Text>
+                  <Text style={styles.areaTime}>
+                    {formatTime(currentArea.time)} - {formatTime(currentArea.endTime)}
+                  </Text>
+                  <Text style={styles.areaRoute}>Route {currentArea.routeNumber}</Text>
+                </View>
+              ) : (
+                <Text style={styles.noAreaText}>No current area</Text>
+              )}
+            </View>
 
-          <View style={styles.areaColumn}>
-            <Text style={styles.areaTitle}>Next Area</Text>
-            {nextArea ? (
-              <View>
-                <Text style={styles.areaName}>{nextArea.location}</Text>
-                <Text style={styles.areaTime}>
-                  {formatTime(nextArea.time)} - {formatTime(nextArea.endTime)}
-                </Text>
-                <Text style={styles.areaRoute}>Route {nextArea.routeNumber}</Text>
-              </View>
-            ) : (
-              <Text style={styles.noAreaText}>No next area</Text>
-            )}
+            <View style={styles.areaColumn}>
+              <Text style={styles.areaTitle}>Next Area</Text>
+              {nextArea ? (
+                <View>
+                  <Text style={styles.areaName}>{nextArea.location}</Text>
+                  <Text style={styles.areaTime}>
+                    {formatTime(nextArea.time)} - {formatTime(nextArea.endTime)}
+                  </Text>
+                  <Text style={styles.areaRoute}>Route {nextArea.routeNumber}</Text>
+                </View>
+              ) : (
+                <Text style={styles.noAreaText}>No next area</Text>
+              )}
+            </View>
           </View>
-        </View>
+        )}
       </View>
     </View>
   );
@@ -371,6 +519,34 @@ const styles = StyleSheet.create({
   noAreaText: {
     fontSize: 14,
     color: '#000000',
+    fontStyle: 'italic',
+  },
+  completedContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  completedIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  completedTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  completedSubtitle: {
+    fontSize: 14,
+    color: '#666666',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  completedMessage: {
+    fontSize: 12,
+    color: '#999999',
+    textAlign: 'center',
     fontStyle: 'italic',
   },
 });
