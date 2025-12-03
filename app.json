@@ -9,6 +9,13 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "sdkVersion": "54.0.0",
+
+    "splash": {
+      "image": "./assets/images/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#E8F5E8"
+    },
+
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -17,14 +24,10 @@
         "NSLocationWhenInUseUsageDescription": "This app needs access to location to include location data in reports submitted to admin."
       }
     },
+
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/G-Waste.png",
-        "backgroundColor": "#E8F5E8"
-      },
-      "splash": {
-        "image": "./assets/images/logo.png",
-        "resizeMode": "contain",
         "backgroundColor": "#E8F5E8"
       },
       "edgeToEdgeEnabled": true,
@@ -37,11 +40,13 @@
         "android.permission.POST_NOTIFICATIONS"
       ]
     },
+
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+
     "plugins": [
       "expo-router",
       [
@@ -73,17 +78,19 @@
         }
       ]
     ],
+
     "experiments": {
       "typedRoutes": true
     },
+
     "development": {
       "developmentClient": {
         "silenceWarnings": true
       }
     },
+
     "extra": {
-      "eas": {
-      }
+      "eas": {}
     }
   }
 }

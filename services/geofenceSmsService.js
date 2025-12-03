@@ -30,29 +30,20 @@ const formatPhoneNumber = (value = "") => {
 export const notifyResidentsInArea = async (areaName, collectorName = "Garbage Collector") => {
   try {
     console.log(`📢 Notifying residents in ${areaName}...`);
-
-    // Get all residents in the specified area
     const { data: residents, error: fetchError } = await supabase
       .from("residents")
       .select("id, phone_number, first_name, resident_address")
       .eq("resident_address", areaName);
-
     if (fetchError) {
       console.error("Error fetching residents:", fetchError);
       throw fetchError;
     }
-
     if (!residents || residents.length === 0) {
       console.log(`No residents found in ${areaName}`);
       return { success: true, message: "No residents to notify", sentCount: 0 };
     }
-
     console.log(`📱 Found ${residents.length} residents in ${areaName}`);
-
-    // Prepare SMS message
     const message = `Hello! The garbage truck is now in your area (${areaName}). Please prepare your waste for collection. Thank you!`;
-
-    // First, create in-app notifications for ALL residents (no SMS cost)
     for (const resident of residents) {
       if (resident.id) {
         try {
@@ -69,10 +60,8 @@ export const notifyResidentsInArea = async (areaName, collectorName = "Garbage C
         }
       }
     }
-    
     console.log(`✅ Created in-app notifications for all ${residents.length} residents`);
 
-    // Collect all valid phone numbers from residents
     const phoneNumbers = [];
     for (const resident of residents) {
       if (!resident.phone_number) {
@@ -86,19 +75,16 @@ export const notifyResidentsInArea = async (areaName, collectorName = "Garbage C
         continue;
       }
 
-      phoneNumbers.push(resident.phone_number); // Keep original format, sendIprogSMS will format it
+      phoneNumbers.push(resident.phone_number); 
     }
 
     let smsSuccess = false;
     let smsError = null;
 
-    // Send 1 bulk SMS to all residents using the existing sendIprogSMS function (uses only 1 credit)
     if (phoneNumbers.length > 0) {
       console.log(`📱 Sending 1 bulk SMS to ${phoneNumbers.length} residents in ${areaName}...`);
       
       try {
-        // Use the existing bulk SMS function from otpService.js
-        // This ensures consistency and eliminates code duplication
         const smsResult = await sendIprogSMS(message, phoneNumbers, phoneNumbers.length); // Set batchSize to all numbers to send in 1 batch
         
         if (smsResult.success) {
@@ -116,7 +102,6 @@ export const notifyResidentsInArea = async (areaName, collectorName = "Garbage C
       console.log(`⚠️ No valid phone numbers found for residents in ${areaName}`);
     }
 
-    // Log summary notification for admin tracking
     try {
       const summaryMessage = smsSuccess 
         ? `Bulk SMS sent to ${phoneNumbers.length} residents in ${areaName} (used 1 credit). All ${residents.length} residents received in-app notifications.`

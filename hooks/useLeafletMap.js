@@ -23,9 +23,7 @@ export const useLeafletMap = (driverLabel) => {
   const routeCacheRef = useRef({}); // Cache routes to reduce OSRM API calls
   const pendingLocationRef = useRef(null); // Store location updates before map is ready
 
-  /**
-   * Generate HTML content for Leaflet map
-   */
+  
   const getMapHtml = useCallback(() => {
     return `<!doctype html>
       <html>
@@ -50,7 +48,6 @@ export const useLeafletMap = (driverLabel) => {
           <div id="map"></div>
           <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
           <script>
-            // Initialize map with default location and expanded Bogo City bounds
             window.map = L.map('map', {
               zoomControl: false,
               attributionControl: false,
@@ -61,12 +58,8 @@ export const useLeafletMap = (driverLabel) => {
               attribution: '${OSM_TILE_LAYER.attribution}',
               maxZoom: ${OSM_TILE_LAYER.maxZoom || 18},
               minZoom: ${OSM_TILE_LAYER.minZoom || 10},
-              // Enable tile caching to reduce data usage
               crossOrigin: true,
-              // Browser will cache tiles automatically (typically 24h)
             }).addTo(window.map);
-
-            // Create marker with smooth animation
             window.marker = L.marker([${DEFAULT_LOCATION.latitude}, ${DEFAULT_LOCATION.longitude}], {
               icon: L.divIcon({
                 className: 'custom-icon',
@@ -76,15 +69,9 @@ export const useLeafletMap = (driverLabel) => {
                 popupAnchor: [0, -28]
               })
             }).addTo(window.map).bindPopup("You (${driverLabel.replace(/"/g, '\\"')})");
-
-            // Initialize empty path polyline
             window.__pathPoints = [];
             window.pathLine = L.polyline(window.__pathPoints, { color: '${MAP_STYLES.pathLine.color}', weight: ${MAP_STYLES.pathLine.weight}, opacity: ${MAP_STYLES.pathLine.opacity} }).addTo(window.map);
-
-            // Reserved holder for planned route polyline
             window.routeLine = null;
-
-            // Signal that map is ready
             window.ReactNativeWebView.postMessage(JSON.stringify({type: 'mapReady'}));
           </script>
         </body>
