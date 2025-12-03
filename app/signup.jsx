@@ -16,7 +16,7 @@ import {
   Text,
   View
 } from "react-native";
-import { vw } from "../utils/responsive";
+import { responsiveFontSize, vw } from "../utils/responsive";
 export const options = {
   headerShown: false,
   tabBarStyle: { display: "none" },
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#458A3D",
   },
   buttonText: {
-    fontSize: 18,
+    fontSize: responsiveFontSize(18),
     fontWeight: "600",
     color: "#fff",
   },
@@ -292,12 +292,12 @@ const styles = StyleSheet.create({
     color: "#666",
     marginTop: 12,
     textAlign: "center",
-    fontSize: 15,
+    fontSize: responsiveFontSize(15),
   },
   linkText: {
     color: "#2196F3",
     fontWeight: "600",
-    fontSize: 15,
+    fontSize: responsiveFontSize(15),
   },
   pickerContainer: {
     flexDirection: 'row',

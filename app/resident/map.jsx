@@ -1,10 +1,12 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable no-unused-vars */
+import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { useResidentAuth } from '../../hooks/useResidentAuth';
 import { supabase } from '../../services/supabaseClient';
 
 export default function MapScreen() {
@@ -28,6 +30,9 @@ export default function MapScreen() {
   const [truckSchedule, setTruckSchedule] = useState(null);
   const [selectedTruckId, setSelectedTruckId] = useState(null);
   const [driverNames, setDriverNames] = useState({});
+  const { resident } = useResidentAuth();
+  const [isCollected, setIsCollected] = useState(false);
+  const [collectedAt, setCollectedAt] = useState(null);
 
   // If schedule screen passed a pickupType, show it immediately while we compute
   useEffect(() => {
@@ -384,35 +389,105 @@ export default function MapScreen() {
     };
   }, []);
 
-  // 🔹 Update collector markers when collectors data changes
+  // Check if collection is completed for resident's area
   useEffect(() => {
-    if (mapInitialized) {
+    const checkCollectionStatus = async () => {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const residentPurok = resident?.purok || '';
+        const residentAddress = resident?.resident_address || resident?.address || '';
+        
+        const { data: collections, error } = await supabase
+          .from('collections')
+          .select('areas_collected, collected_at')
+          .eq('collected_date', today);
+        
+        if (error) throw error;
+        
+        let collected = false;
+        let collectedTime = null;
+        
+        (collections || []).forEach(row => {
+          const arr = Array.isArray(row.areas_collected) ? row.areas_collected : [];
+          arr.forEach(area => {
+            if (area) {
+              const areaLower = area.toLowerCase();
+              const purokLower = residentPurok.toLowerCase();
+              const addressLower = residentAddress.toLowerCase();
+              
+              // Check if this area matches resident's purok or address
+              if ((purokLower && areaLower.includes(purokLower)) ||
+                  (addressLower && (areaLower.includes(addressLower) || addressLower.includes(areaLower)))) {
+                collected = true;
+                if (row.collected_at && !collectedTime) {
+                  collectedTime = row.collected_at;
+                }
+              }
+            }
+          });
+        });
+        
+        setIsCollected(collected);
+        setCollectedAt(collectedTime);
+        
+        // If collected, clear map elements
+        if (collected && mapInitialized && webviewRef.current) {
+          const clearScript = `
+            if (window.collectorMarkers) {
+              window.collectorMarkers.forEach(marker => marker.remove());
+              window.collectorMarkers = [];
+            }
+            if (window.routePolyline) {
+              window.routePolyline.remove();
+              window.routePolyline = null;
+            }
+          `;
+          webviewRef.current.injectJavaScript(clearScript);
+        }
+      } catch (error) {
+        console.error('Error checking collection status:', error);
+      }
+    };
+    
+    if (resident) {
+      checkCollectionStatus();
+      // Subscribe to collection updates
+      const channel = supabase
+        .channel('collection-status')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'collections' },
+          () => {
+            checkCollectionStatus();
+          }
+        )
+        .subscribe();
+      
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [resident, mapInitialized]);
+
+  // 🔹 Update collector markers when collectors data changes - but only if not collected
+  useEffect(() => {
+    if (mapInitialized && !isCollected) {
       updateCollectorMarkers(getEnrichedActiveCollectors());
     }
-  }, [collectors, mapInitialized]);
+  }, [collectors, mapInitialized, isCollected]);
 
   // 🔹 After location is resolved, fetch resident address + build route
   useEffect(() => {
-    const fetchAndRoute = async () => {
-      try {
-        // Without Firebase resident profile, we skip geocoding
-        return;
-      } catch (e) {
-        // ignore
-      }
-    };
-
-    if (hasLocationPermission && !isLoadingLocation && (location || defaultLocation)) {
-      fetchAndRoute();
-    }
+    // Without Firebase resident profile, we skip geocoding
+    // This effect is kept for potential future implementation
   }, [hasLocationPermission, isLoadingLocation, location]);
 
-  // 🔹 Update route when routeCoords changes
+  // 🔹 Update route when routeCoords changes - but only if not collected
   useEffect(() => {
-    if (mapInitialized && routeCoords.length > 0) {
+    if (mapInitialized && routeCoords.length > 0 && !isCollected) {
       updateRoute(routeCoords);
     }
-  }, [routeCoords, mapInitialized]);
+  }, [routeCoords, mapInitialized, isCollected]);
 
   // 🔹 Update user location when location changes
   useEffect(() => {
@@ -669,25 +744,51 @@ export default function MapScreen() {
         <View style={[styles.placeholder, styles.mapContainer]} />
       )}
 
-      <TouchableOpacity 
-        activeOpacity={0.9} 
-        style={styles.floatingCard}
-        onPress={fetchPickupInfo}
-      >
-        <Text style={styles.scheduleTitle}>
-          Today&apos;s Pickup: <Text style={styles.locationText}>{pickupInfo.type}</Text>
-        </Text>
-        <Text style={styles.estimatedArrival}>
-          Estimated Arrival: <Text style={styles.timeText}>{pickupInfo.estimatedArrival}</Text>
-        </Text>
-        <Text style={styles.statusText}>
-          Status: <Text style={getStatusStyle(pickupInfo.status)}>{pickupInfo.status}</Text>
-        </Text>
-      
-        {!pickupInfo.nextCollector && (
-          <Text style={styles.tapToRefresh}>No active driver right now</Text>
-        )}
-      </TouchableOpacity>
+      {/* Show completed card if collection is done, otherwise show pickup info */}
+      {isCollected ? (
+        <TouchableOpacity 
+          activeOpacity={0.9} 
+          style={styles.completedCard}
+        >
+          <View style={styles.completedCardContent}>
+            <View style={styles.completedIconContainer}>
+              <Feather name="check-circle" size={48} color="#4CAF50" />
+            </View>
+            <Text style={styles.completedTitle}>Collection Completed!</Text>
+            <Text style={styles.completedMessage}>
+              Your waste has been collected successfully.
+            </Text>
+            {collectedAt && (
+              <Text style={styles.completedTime}>
+                Collected at: {new Date(collectedAt).toLocaleTimeString('en-US', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity 
+          activeOpacity={0.9} 
+          style={styles.floatingCard}
+          onPress={fetchPickupInfo}
+        >
+          <Text style={styles.scheduleTitle}>
+            Today&apos;s Pickup: <Text style={styles.locationText}>{pickupInfo.type}</Text>
+          </Text>
+          <Text style={styles.estimatedArrival}>
+            Estimated Arrival: <Text style={styles.timeText}>{pickupInfo.estimatedArrival}</Text>
+          </Text>
+          <Text style={styles.statusText}>
+            Status: <Text style={getStatusStyle(pickupInfo.status)}>{pickupInfo.status}</Text>
+          </Text>
+        
+          {!pickupInfo.nextCollector && (
+            <Text style={styles.tapToRefresh}>No active driver right now</Text>
+          )}
+        </TouchableOpacity>
+      )}
 
       {/* Truck Schedule Modal */}
       <Modal
@@ -900,5 +1001,47 @@ const styles = StyleSheet.create({
     color: '#666',
     padding: 20,
     fontSize: 16,
+  },
+  completedCard: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 110,
+    borderRadius: 16,
+    backgroundColor: '#E8F5E9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 998,
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  completedCardContent: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  completedIconContainer: {
+    marginBottom: 12,
+  },
+  completedTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2E7D32',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  completedMessage: {
+    fontSize: 16,
+    color: '#388E3C',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  completedTime: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 4,
   },
 });

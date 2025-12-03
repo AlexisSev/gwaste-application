@@ -9,7 +9,7 @@ import InputField from '../components/ui/InputField';
 import PrimaryButton from '../components/ui/PrimaryButton';
 import { sendOTPSMS, verifyOTP } from '../services/otpService';
 import { supabase } from '../services/supabaseClient';
-import { vw } from '../utils/responsive';
+import { vw, responsiveFontSize } from '../utils/responsive';
 
 function ForgotPasswordScreen() {
   const [step, setStep] = useState(1); // 1: Enter identifier, 2: Enter OTP, 3: Reset password
@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     color: '#888',
     textAlign: 'center',
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
   },
   input: {
     width: '100%',
@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#458A3D',
   },
   buttonText: {
-    fontSize: 18,
+    fontSize: responsiveFontSize(18),
     fontWeight: '600',
     color: '#fff',
   },
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
   },
   resendText: {
     color: '#8BC500',
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     fontWeight: '500',
   },
   backContainer: {
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
   },
   backText: {
     color: '#8BC500',
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     fontWeight: '500',
     marginLeft: 6,
   },

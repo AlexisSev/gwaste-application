@@ -2,14 +2,14 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Alert,
-    StyleSheet,
-    SafeAreaView,
-    ScrollView,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useCollectorAuth } from '../../hooks/useCollectorAuthSupabase';
 
@@ -85,11 +85,7 @@ export default function CollectorSettingsScreen() {
   };
 
   const handleViewProfile = () => {
-    Alert.alert(
-      "Profile",
-      "Profile page will be available soon!",
-      [{ text: "OK" }]
-    );
+    router.push('/collector/profile');
   };
 
   return (
@@ -127,7 +123,7 @@ export default function CollectorSettingsScreen() {
             />
           </View>
 
-          <View style={styles.settingItem}>
+          {/* <View style={styles.settingItem}>
             <View style={styles.settingInfo}>
               <Feather name="alert-circle" size={20} color="#8BC500" />
               <View style={styles.settingContent}>
@@ -141,7 +137,7 @@ export default function CollectorSettingsScreen() {
               trackColor={{ false: '#E0E0E0', true: '#8BC500' }}
               thumbColor={collectionAlertsEnabled ? '#fff' : '#f4f3f4'}
             />
-          </View>
+          </View> */}
         </View>
 
         {/* Location & Navigation Section */}
@@ -164,7 +160,7 @@ export default function CollectorSettingsScreen() {
             />
           </View>
 
-          <View style={styles.settingItem}>
+          {/* <View style={styles.settingItem}>
             <View style={styles.settingInfo}>
               <Feather name="navigation" size={20} color="#8BC500" />
               <View style={styles.settingContent}>
@@ -178,7 +174,7 @@ export default function CollectorSettingsScreen() {
               trackColor={{ false: '#E0E0E0', true: '#8BC500' }}
               thumbColor={autoRouteEnabled ? '#fff' : '#f4f3f4'}
             />
-          </View>
+          </View> */}
         </View>
 
         {/* Appearance Section
@@ -203,7 +199,7 @@ export default function CollectorSettingsScreen() {
         </View> */}
 
         {/* Work Settings Section */}
-        <View style={styles.section}>
+        {/* <View style={styles.section}>
           <Text style={styles.sectionTitle}>Work Settings</Text>
           
           <TouchableOpacity style={styles.settingItem}>
@@ -238,9 +234,9 @@ export default function CollectorSettingsScreen() {
             </View>
             <Feather name="chevron-right" size={20} color="#999" />
           </TouchableOpacity>
-        </View>
+        </View> */}
 
-        {/* Data & Storage Section */}
+        {/* Data & Storage Section
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data & Storage</Text>
           
@@ -265,7 +261,7 @@ export default function CollectorSettingsScreen() {
             </View>
             <Feather name="chevron-right" size={20} color="#999" />
           </TouchableOpacity>
-        </View>
+        </View> */}
 
         {/* Support Section */}
         <View style={styles.section}>

@@ -19,6 +19,7 @@ import InputField from "../components/ui/InputField";
 import PrimaryButton from "../components/ui/PrimaryButton";
 import { generateOTP, sendOtpSMS, verifyOtpCode } from "../services/otpService.js";
 import { supabase } from "../services/supabaseClient";
+import { vw, responsiveFontSize } from "../utils/responsive";
 
 // Helper function to format phone numbers consistently
 const formatPhoneNumber = (value = "") => {
@@ -38,7 +39,6 @@ const formatPhoneNumber = (value = "") => {
     return null;
   }
 };
-import { vw } from "../utils/responsive";
 
 export const options = {
   headerShown: false,
@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     color: "#888",
     textAlign: "center",
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
   },
   input: {
     width: "100%",
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#458A3D",
   },
   buttonText: {
-    fontSize: 18,
+    fontSize: responsiveFontSize(18),
     fontWeight: "600",
     color: "#fff",
   },
@@ -331,14 +331,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 8,
     textAlign: "center",
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
   },
   resend: {
     color: "#87CEEB",
     marginTop: 12,
     marginBottom: 8,
     textAlign: "center",
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     fontWeight: "500",
   },
   link: {

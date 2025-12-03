@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import DraggableFloatingButton from '../../components/DraggableFloatingButton';
 import { useResidentAuth } from '../../hooks/useResidentAuth';
 import { supabase } from '../../services/supabaseClient';
+import { responsiveFontSize } from '../../utils/responsive';
 
 export default function ResidentIndex() {
   const { resident, loading: authLoading } = useResidentAuth();
@@ -1065,7 +1066,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   greeting: {
-    fontSize: 24,
+    fontSize: responsiveFontSize(24),
     fontWeight: 'bold',
     color: '#0f0f0f',
     marginBottom: 8,
@@ -1095,7 +1096,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   scheduleTitle: {
-    fontSize: 18,
+    fontSize: responsiveFontSize(18),
     fontWeight: 'bold',
     color: '#4CAF50',
     marginBottom: 16,
@@ -1329,7 +1330,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   nextCollectionTitle: {
-    fontSize: 24,
+    fontSize: responsiveFontSize(24),
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 8,
@@ -1496,7 +1497,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF3E0',
   },
   featureTitle: {
-    fontSize: 16,
+    fontSize: responsiveFontSize(16),
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 4,

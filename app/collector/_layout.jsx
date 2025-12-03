@@ -18,6 +18,8 @@ export default function CollectorTabLayout() {
     '/collector/login',
     '/collector/landing',
     '/collector/signup',
+    '/collector/settings',
+    '/collector/profile',
     '/resident/signup',
   ];
 

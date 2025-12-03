@@ -9,7 +9,7 @@ import InputField from '../components/ui/InputField';
 import PrimaryButton from '../components/ui/PrimaryButton';
 import { useCollectorAuth } from '../hooks/useCollectorAuthSupabase';
 import { useResidentAuth } from '../hooks/useResidentAuth';
-import { vw } from '../utils/responsive';
+import { responsiveFontSize, vw } from '../utils/responsive';
 
 function LoginScreen() {
   const [firstName, setFirstName] = useState('');
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#458A3D',
   },
   buttonText: {
-    fontSize: 18,
+    fontSize: responsiveFontSize(18),
     fontWeight: '600',
     color: '#fff',
   },
@@ -288,29 +288,29 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 12,
     textAlign: 'center',
-    fontSize: 15,
+    fontSize: responsiveFontSize(15),
   },
   linkText: {
     color: '#2196F3',
     fontWeight: '600',
-    fontSize: 15,
+    fontSize: responsiveFontSize(15),
   },
   optionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
-    marginTop: 4,
+    marginTop: 2,
     marginBottom: 8,
   },
   rememberContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
   },
   checkbox: {
-    width: 12,
-    height: 12,
+    width: 11,
+    height: 11,
     borderRadius: 2,
     borderWidth: 2,
     borderColor: '#8BC500',
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
   },
   rememberText: {
     color: '#666',
-    fontSize: 13,
+    fontSize: responsiveFontSize(11),
     fontWeight: '500',
   },
   forgotPasswordContainer: {
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
   },
   forgotPasswordText: {
     color: '#8BC500',
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     fontWeight: '500',
   },
 });
