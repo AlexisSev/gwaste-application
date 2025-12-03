@@ -30,6 +30,7 @@ export default function MapScreen() {
   const [truckSchedule, setTruckSchedule] = useState(null);
   const [selectedTruckId, setSelectedTruckId] = useState(null);
   const [driverNames, setDriverNames] = useState({});
+  const [driverRoutes, setDriverRoutes] = useState({}); // Map collector_id -> primary route number
   const { resident } = useResidentAuth();
   const [isCollected, setIsCollected] = useState(false);
   const [collectedAt, setCollectedAt] = useState(null);
@@ -72,42 +73,85 @@ export default function MapScreen() {
     if (webviewRef.current && mapInitialized) {
       const collectorsJson = JSON.stringify(activeCollectors || []);
       const script = `
-        // Clear existing collector markers
-        if (window.collectorMarkers) {
-          window.collectorMarkers.forEach(marker => marker.remove());
+        // Initialize collectorMarkers map if it doesn't exist
+        if (!window.collectorMarkersMap) {
+          window.collectorMarkersMap = {};
         }
-        window.collectorMarkers = [];
+        if (!window.collectorMarkers) {
+          window.collectorMarkers = [];
+        }
 
-        // Add new collector markers
         const collectors = ${collectorsJson};
+        const currentIds = new Set();
+        
+        // Update or create markers for each collector
         collectors.forEach(c => {
-          if (c.latitude && c.longitude) {
-            const marker = L.marker([c.latitude, c.longitude], {
-              icon: L.divIcon({
-                className: 'custom-icon',
-                html: '<div style="font-size: 28px; line-height: 1; text-align: center; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">🚛</div>',
-                iconSize: [28, 28],
-                iconAnchor: [14, 28],
-                popupAnchor: [0, -28]
-              })
-            }).addTo(window.map);
+          if (c.latitude && c.longitude && c.collector_id) {
+            currentIds.add(c.collector_id);
+            const existingMarker = window.collectorMarkersMap[c.collector_id];
             
-            // Create detailed popup
-            const popupContent = \`
-              <div style="text-align: center; min-width: 150px;">
-                <h4 style="margin: 0 0 8px 0; color: #4CAF50;">🚛 Driver \${c.displayName || c.collector_id}</h4>
-                <p style="margin: 4px 0; font-size: 12px; color: #666;">
-                  Last seen: \${new Date(c.updated_at).toLocaleTimeString()}
-                </p>
-                <button onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type: 'truckClicked', collectorId: '\${c.collector_id}'}))" 
-                        style="background: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 8px;">
-                  View Schedule
-                </button>
-              </div>
-            \`;
-            
-            marker.bindPopup(popupContent);
-            window.collectorMarkers.push(marker);
+            if (existingMarker) {
+              // Update existing marker position smoothly
+              const newLatLng = [c.latitude, c.longitude];
+              existingMarker.setLatLng(newLatLng, { animate: true, duration: 0.5 });
+              
+              // Update popup content
+              const popupContent = \`
+                <div style="text-align: center; min-width: 150px;">
+                  <h4 style="margin: 0 0 4px 0; color: #4CAF50;">🚛 \${c.displayName || 'Driver'}</h4>
+                  <p style="margin: 2px 0; font-size: 12px; color: #333; font-weight: 600;">
+                   \${c.routeNumber ? 'Route ' + c.routeNumber : 'N/A'}
+                  </p>
+                  <p style="margin: 2px 0; font-size: 12px; color: #666;">
+                    Last seen: \${new Date(c.updated_at).toLocaleTimeString()}
+                  </p>
+                </div>
+              \`;
+              existingMarker.setPopupContent(popupContent);
+            } else {
+              // Create new marker
+              const marker = L.marker([c.latitude, c.longitude], {
+                icon: L.divIcon({
+                  className: 'custom-icon',
+                  html: \`<div style="font-size: 28px; line-height: 1; text-align: center; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">🚛</div>\`,
+                  iconSize: [28, 28],
+                  iconAnchor: [14, 28],
+                  popupAnchor: [0, -28]
+                })
+              }).addTo(window.map);
+              
+              // Create detailed popup
+              const popupContent = \`
+                <div style="text-align: center; min-width: 150px;">
+                  <h4 style="margin: 0 0 4px 0; color: #4CAF50;">🚛 \${c.displayName || 'Driver'}</h4>
+                  <p style="margin: 2px 0; font-size: 12px; color: #333; font-weight: 600;">
+                   \${c.routeNumber ? 'Route ' + c.routeNumber : 'N/A'}
+                  </p>
+                  <p style="margin: 2px 0; font-size: 12px; color: #666;">
+                    Last seen: \${new Date(c.updated_at).toLocaleTimeString()}
+                  </p>
+                </div>
+              \`;
+              
+              marker.bindPopup(popupContent);
+              window.collectorMarkersMap[c.collector_id] = marker;
+              window.collectorMarkers.push(marker);
+            }
+          }
+        });
+        
+        // Remove markers for collectors that no longer exist
+        Object.keys(window.collectorMarkersMap).forEach(id => {
+          if (!currentIds.has(id)) {
+            const marker = window.collectorMarkersMap[id];
+            if (marker) {
+              marker.remove();
+              delete window.collectorMarkersMap[id];
+              const index = window.collectorMarkers.indexOf(marker);
+              if (index > -1) {
+                window.collectorMarkers.splice(index, 1);
+              }
+            }
           }
         });
       `;
@@ -338,53 +382,76 @@ export default function MapScreen() {
     }
   };
 
-  // 🔹 Fetch collectors initially
+  // 🔹 Fetch collectors initially and set up periodic refresh
   useEffect(() => {
     const fetchCollectors = async () => {
       try {
         const { data, error } = await supabase.from('trucklocation').select('*');
         if (error) throw error;
 
-        // ✅ Keep only active drivers (last 60s)
-        const activeDrivers = data.filter((d) => {
-          const updatedAt = new Date(d.updated_at).getTime();
-          return Date.now() - updatedAt < 60000;
-        });
-
-        setCollectors(activeDrivers);
+        // Show all drivers that have ever reported a location.
+        // We rely on the record as the "last known" location so the truck icon
+        // stays visible for residents even if the driver hasn't moved recently.
+        setCollectors(data || []);
+        console.log(`✅ Loaded ${data?.length || 0} truck locations`);
       } catch (err) {
         console.error("Error fetching collectors:", err.message);
       }
     };
 
+    // Fetch immediately
     fetchCollectors();
+    
+    // Set up periodic refresh every 30 seconds as backup to real-time subscription
+    const refreshInterval = setInterval(fetchCollectors, 30000);
+    
+    return () => {
+      clearInterval(refreshInterval);
+    };
   }, []);
 
   // 🔹 Subscribe to collector location updates in realtime
   useEffect(() => {
+    console.log('🔔 Setting up real-time subscription for truck locations');
+    
     const channel = supabase
       .channel('realtime:locations')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'trucklocation' },
         (payload) => {
-          const newDriver = payload.new;
-          setCollectors((prev) => {
-            const others = prev.filter((c) => c.collector_id !== newDriver.collector_id);
-
-            // ✅ Check if still "active" before adding
-            const updatedAt = new Date(newDriver.updated_at).getTime();
-            if (Date.now() - updatedAt < 60000) { // 60 seconds
-              return [...others, newDriver];
-            } else {
-              return others;
+          console.log('📦 Truck location updated in real-time:', payload.eventType, payload.new?.collector_id);
+          
+          if (payload.eventType === 'DELETE') {
+            // Remove truck from map when deleted
+            const deletedId = payload.old?.collector_id;
+            if (deletedId) {
+              setCollectors((prev) => prev.filter((c) => c.collector_id !== deletedId));
             }
-          });
+          } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            // Add or update truck location
+            const newDriver = payload.new;
+            if (newDriver && newDriver.latitude && newDriver.longitude) {
+              setCollectors((prev) => {
+                // Always keep a single "last known" record per collector_id.
+                const others = prev.filter((c) => c.collector_id !== newDriver.collector_id);
+                return [...others, newDriver];
+              });
+            }
+          }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('📡 Real-time subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to truck location updates');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Error subscribing to truck location updates');
+        }
+      });
 
     return () => {
+      console.log('🔕 Unsubscribing from truck location updates');
       supabase.removeChannel(channel);
     };
   }, []);
@@ -430,19 +497,15 @@ export default function MapScreen() {
         setIsCollected(collected);
         setCollectedAt(collectedTime);
         
-        // If collected, clear map elements
+        // If collected, clear only the route polyline (keep trucks visible)
         if (collected && mapInitialized && webviewRef.current) {
-          const clearScript = `
-            if (window.collectorMarkers) {
-              window.collectorMarkers.forEach(marker => marker.remove());
-              window.collectorMarkers = [];
-            }
+          const clearRouteScript = `
             if (window.routePolyline) {
               window.routePolyline.remove();
               window.routePolyline = null;
             }
           `;
-          webviewRef.current.injectJavaScript(clearScript);
+          webviewRef.current.injectJavaScript(clearRouteScript);
         }
       } catch (error) {
         console.error('Error checking collection status:', error);
@@ -469,12 +532,12 @@ export default function MapScreen() {
     }
   }, [resident, mapInitialized]);
 
-  // 🔹 Update collector markers when collectors data changes - but only if not collected
+  // 🔹 Update collector markers when collectors data change (always show trucks)
   useEffect(() => {
-    if (mapInitialized && !isCollected) {
+    if (mapInitialized) {
       updateCollectorMarkers(getEnrichedActiveCollectors());
     }
-  }, [collectors, mapInitialized, isCollected]);
+  }, [collectors, mapInitialized]);
 
   // 🔹 After location is resolved, fetch resident address + build route
   useEffect(() => {
@@ -581,42 +644,80 @@ export default function MapScreen() {
     );
   };
 
-  // 🔹 Only show collectors updated in last 2 minutes
+  // 🔹 Show all collectors that have reported a location (no time window)
+  // Any truck with a row in `trucklocation` will remain visible on the map
   const getActiveCollectors = () => {
-    const now = Date.now();
-    return collectors.filter((c) => {
-      if (!c.updated_at) return false;
-      const diff = now - new Date(c.updated_at).getTime();
-      return diff < 60 * 1000; // 60 seconds
-    });
+    return collectors || [];
   };
 
-  // Build enriched list with friendly display names
+  // Build enriched list with friendly display names and primary route number
   const getEnrichedActiveCollectors = () => {
     const active = getActiveCollectors();
     return active.map((c) => ({
       ...c,
       displayName: driverNames[c.collector_id] || c.collector_id,
+      routeNumber: driverRoutes[c.collector_id] || null,
     }));
   };
 
-  // Fetch friendly driver names for currently active collectors
+  // Fetch friendly driver names and primary route numbers for currently active collectors
   useEffect(() => {
     const fetchDriverNames = async () => {
       try {
         const active = getActiveCollectors();
         const ids = Array.from(new Set(active.map((c) => c.collector_id).filter(Boolean)));
         if (ids.length === 0) return;
-        const { data, error } = await supabase
+
+        // 1) Load collector profiles to get driver names
+        const { data: collectorRows, error: collectorError } = await supabase
           .from('collectors')
           .select('collector_id, driver, firstName')
           .in('collector_id', ids);
-        if (error) throw error;
-        const map = {};
-        (data || []).forEach((row) => {
-          map[row.collector_id] = row.driver || row.firstName || row.collector_id;
+        if (collectorError) throw collectorError;
+
+        const nameMap = {};
+        const driverNameSet = new Set();
+        (collectorRows || []).forEach((row) => {
+          const displayName = row.driver || row.firstName || row.collector_id;
+          nameMap[row.collector_id] = displayName;
+          if (row.driver) {
+            driverNameSet.add(row.driver);
+          } else if (row.firstName) {
+            driverNameSet.add(row.firstName);
+          }
         });
-        setDriverNames((prev) => ({ ...prev, ...map }));
+
+        // 2) Load primary route numbers for those drivers
+        const driverNamesArr = Array.from(driverNameSet).filter(Boolean);
+        let routesMapByDriver = {};
+        if (driverNamesArr.length > 0) {
+          const { data: routeRows, error: routesError } = await supabase
+            .from('routes')
+            .select('driver, route')
+            .in('driver', driverNamesArr);
+          if (routesError) {
+            console.error('Error loading routes for drivers:', routesError);
+          } else {
+            (routeRows || []).forEach((r) => {
+              // Use the first route we see for this driver as the primary route
+              if (r.driver && r.route && routesMapByDriver[r.driver] == null) {
+              routesMapByDriver[r.driver] = r.route;
+              }
+            });
+          }
+        }
+
+        // 3) Build map from collector_id -> primary route number
+        const routeMapByCollector = {};
+        (collectorRows || []).forEach((row) => {
+          const keyName = row.driver || row.firstName || null;
+          if (keyName && routesMapByDriver[keyName] != null) {
+            routeMapByCollector[row.collector_id] = routesMapByDriver[keyName];
+          }
+        });
+
+        setDriverNames((prev) => ({ ...prev, ...nameMap }));
+        setDriverRoutes((prev) => ({ ...prev, ...routeMapByCollector }));
       } catch (e) {
         // silently ignore
       }
@@ -698,8 +799,9 @@ export default function MapScreen() {
               fillOpacity: 0.8
             }).addTo(window.map);
 
-            // Initialize empty arrays for dynamic content
+            // Initialize empty arrays and maps for dynamic content
             window.collectorMarkers = [];
+            window.collectorMarkersMap = {};
             window.routePolyline = null;
 
             // Signal that map is ready
