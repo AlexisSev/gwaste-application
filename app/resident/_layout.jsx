@@ -21,6 +21,7 @@ export default function ResidentTabLayout() {
     '/resident/signup',
     '/collector/signup',
     '/resident/GwasteChatbot',
+    '/resident/report-issue',
   ];
 
   const shouldHideTabBar = hideTabBarRoutes.includes(pathname);

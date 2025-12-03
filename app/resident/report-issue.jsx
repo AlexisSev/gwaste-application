@@ -44,10 +44,11 @@ const ReportIssue = ({ navigation }) => {
       return;
     }
 
-    if (images.length >= 1) {
+    // Limit to maximum 3 images
+    if (images.length >= 3) {
       showMessage({
         message: "Image Limit",
-        description: "Maximum 1 image allowed",
+        description: "Maximum 3 images allowed",
         type: "warning",
       });
       return;
@@ -111,7 +112,7 @@ const ReportIssue = ({ navigation }) => {
       // Show success alert
       Alert.alert(
         "Report Submitted Successfully! ✓",
-        "Your issue has been reported and will be reviewed by our team within 24 hours. You can track the status of your report in your profile.",
+        "Your issue has been reported and will be reviewed by our team within 24 hours.",
         [
           {
             text: "OK",
@@ -231,27 +232,27 @@ const ReportIssue = ({ navigation }) => {
         <View style={styles.formGroup}>
           <Text style={styles.label}>Add Images (Optional)</Text>
           <Text style={styles.helpText}>
-            Upload 1 photo to support your issue report
+            Upload up to 3 photos to support your issue report
           </Text>
           <TouchableOpacity
             style={[
               styles.imagePickButton,
               loading && styles.disabledButton,
-              images.length >= 1 && styles.maxImagesButton
+              images.length >= 3 && styles.maxImagesButton
             ]}
             onPress={pickImage}
-            disabled={loading || images.length >= 1}
+            disabled={loading || images.length >= 3}
           >
             <Ionicons
               name="camera-outline"
               size={24}
-              color={images.length >= 1 ? "#A1A5A7" : "#8BC500"}
+              color={images.length >= 3 ? "#A1A5A7" : "#8BC500"}
             />
             <Text style={[
               styles.imagePickButtonText,
-              images.length >= 1 && styles.maxImagesText
+              images.length >= 3 && styles.maxImagesText
             ]}>
-              {images.length >= 1 ? "Image Added" : "Add Image"}
+              {images.length >= 3 ? "Max Images Reached" : `Add Image (${images.length}/3)`}
             </Text>
           </TouchableOpacity>
 

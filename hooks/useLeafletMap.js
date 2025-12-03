@@ -398,10 +398,14 @@ export const useLeafletMap = (driverLabel) => {
         return;
       }
 
-      // Fetch route from OSRM API
-      const url = `${OSRM_ROUTING_URL}/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+      // Fetch route from OSRM API - uses shortest path algorithm by default
+      // OSRM returns the shortest/fastest route automatically
+      // Parameters: overview=full (detailed geometry), geometries=geojson (GeoJSON format), alternatives=false (only shortest route)
+      const url = `${OSRM_ROUTING_URL}/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&alternatives=false&steps=false`;
       const res = await fetch(url);
       const data = await res.json();
+      
+      // OSRM returns routes sorted by duration (shortest first), so routes[0] is always the shortest path
       let coords = data?.routes?.[0]?.geometry?.coordinates || [];
       
       // Cache the route for future use

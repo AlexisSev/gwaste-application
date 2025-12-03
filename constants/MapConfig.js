@@ -40,7 +40,7 @@ export const AREA_COORDINATES = {
   'Guadalupe': { lat: 10.996979448815534, lng: 124.00777586944444 },
 
   // Route 5 Areas - Precise Coordinates
-  'Public Market': { lat: 11.056368485006644, lng: 124.01268493915852 },
+  'Public Market': { lat: 11.055546368341789, lng: 124.01236338150812 },  
   'Cantecson': { lat: 11.05364155819223, lng: 124.01322835005016 },
   'Sambag': { lat: 11.052731863205738, lng: 124.00888256245571 },
   'Sto. Rosario': { lat: 11.052750216559636, lng: 124.00577995083918 },
@@ -85,7 +85,7 @@ export const DEFAULT_LOCATION = {
  * Geofence radius in meters - defines the area around a destination
  * where the collector is considered to have "entered" the collection zone
  */
-export const GEOFENCE_RADIUS_METERS = 500;
+export const GEOFENCE_RADIUS_METERS = 50;
 
 /**
  * GPS tracking configuration - Optimized for data usage
