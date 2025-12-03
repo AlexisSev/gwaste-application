@@ -19,7 +19,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo.png",
+        "foregroundImage": "./assets/images/G-Waste.png",
         "backgroundColor": "#E8F5E8"
       },
       "splash": {
