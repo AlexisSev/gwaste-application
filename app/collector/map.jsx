@@ -13,8 +13,7 @@ import {
   buildSchedule,
   computeNextUncollected,
   findScheduleEntryByLocation,
-  formatTime,
-  updateCurrentAndNextAreas,
+  updateCurrentAndNextAreas
 } from '../../utils/scheduleHelpers';
 
 export default function CollectorMapScreen() {
@@ -316,11 +315,30 @@ export default function CollectorMapScreen() {
     }
   }, [mapInitialized, location]);
 
+  // When current area changes, compute a planned route to it (for initial display)
+  useEffect(() => {
+    const run = async () => {
+      if (!currentArea || !currentArea.location) return;
+      if (!location) return;
+      if (!mapInitialized) return;
+      const dest = await geocodeArea(currentArea.location);
+      if (!dest) return;
+      routeDestRef.current = { name: currentArea.location, lat: dest.lat, lng: dest.lng };
+      insideGeofenceRef.current = false;
+      await drawPlannedRoute(location.latitude, location.longitude, dest.lat, dest.lng, currentArea.location, currentArea.routeNumber);
+    };
+    run();
+  }, [currentArea, mapInitialized, location]);
+
   // When next area changes, compute a planned route
   useEffect(() => {
     const run = async () => {
       if (!nextArea || !nextArea.location) return;
       if (!location) return;
+      if (!mapInitialized) return;
+      // Only plan route to next area if we don't have a current area
+      // (to avoid showing route to next when we should show route to current)
+      if (currentArea && currentArea.location) return;
       const dest = await geocodeArea(nextArea.location);
       if (!dest) return;
       routeDestRef.current = { name: nextArea.location, lat: dest.lat, lng: dest.lng };
@@ -328,7 +346,7 @@ export default function CollectorMapScreen() {
       await drawPlannedRoute(location.latitude, location.longitude, dest.lat, dest.lng, nextArea.location, nextArea.routeNumber);
     };
     run();
-  }, [nextArea, mapInitialized]);
+  }, [nextArea, mapInitialized, location, currentArea]);
 
   const userLocation = location || DEFAULT_LOCATION;
 
@@ -399,9 +417,6 @@ export default function CollectorMapScreen() {
               {currentArea ? (
                 <View>
                   <Text style={styles.areaName}>{currentArea.location}</Text>
-                  <Text style={styles.areaTime}>
-                    {formatTime(currentArea.time)} - {formatTime(currentArea.endTime)}
-                  </Text>
                   <Text style={styles.areaRoute}>Route {currentArea.routeNumber}</Text>
                 </View>
               ) : (
@@ -414,9 +429,6 @@ export default function CollectorMapScreen() {
               {nextArea ? (
                 <View>
                   <Text style={styles.areaName}>{nextArea.location}</Text>
-                  <Text style={styles.areaTime}>
-                    {formatTime(nextArea.time)} - {formatTime(nextArea.endTime)}
-                  </Text>
                   <Text style={styles.areaRoute}>Route {nextArea.routeNumber}</Text>
                 </View>
               ) : (

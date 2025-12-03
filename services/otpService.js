@@ -1,19 +1,12 @@
 import { Alert } from "react-native";
 import { supabase } from "./supabaseClient";
 
-/**
- * IPROG API configuration
- * NOTE: Keep tokens secure (prefer env vars for production).
- */
 const IPROG_API_TOKEN = "e5ac0f9233301dd0dc10448abb5089527cf2cf94";
 const IPROG_BASE_URL = "https://sms.iprogtech.com/api/v1/sms_messages/send_bulk";
 const IPROG_OTP_URL = "https://www.iprogsms.com/api/v1/sms_messages";
-
 const OTP_EXPIRY_MS = 2 * 60 * 1000; // 2 minutes
 
-/**
- * Helpers
- */
+
 const formatPhoneNumber = (value = "") => {
   try {
     if (!value || typeof value !== "string") return null;

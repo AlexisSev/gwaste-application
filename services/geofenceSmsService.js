@@ -1,8 +1,25 @@
 // services/geofenceSmsService.js
+import { sendIprogSMS } from "./otpService";
 import { supabase } from "./supabaseClient";
 
-// IPROGSMS Configuration
-const IPROGSMS_API_KEY = "e5ac0f9233301dd0dc10448abb5089527cf2cf94"; // Replace with your actual API key
+// Helper function to format phone number (same as otpService.js)
+const formatPhoneNumber = (value = "") => {
+  try {
+    if (!value || typeof value !== "string") return null;
+    const digits = value.replace(/\D/g, "");
+    if (!digits) return null;
+
+    let normalized = digits;
+    if (normalized.startsWith("0")) normalized = "63" + normalized.substring(1);
+    else if (normalized.length === 10) normalized = "63" + normalized;
+    else if (!normalized.startsWith("63")) normalized = `63${normalized}`;
+
+    const e164 = `+${normalized}`;
+    return /^\+63\d{10}$/.test(e164) ? e164 : null;
+  } catch (_err) {
+    return null;
+  }
+};
 
 /**
  * Send SMS notification to residents in a specific area
@@ -35,69 +52,79 @@ export const notifyResidentsInArea = async (areaName, collectorName = "Garbage C
     // Prepare SMS message
     const message = `Hello! The garbage truck is now in your area (${areaName}). Please prepare your waste for collection. Thank you!`;
 
-    // Send SMS to each resident
-    const results = [];
-    let successCount = 0;
-    let failCount = 0;
+    // First, create in-app notifications for ALL residents (no SMS cost)
+    for (const resident of residents) {
+      if (resident.id) {
+        try {
+          await supabase.from("notifications").insert({
+            user_id: resident.id,
+            title: "Garbage Collection Alert",
+            message: `The garbage truck is now in your area (${areaName}). Please prepare your waste for collection.`,
+            area: areaName,
+            is_read: false
+          });
+          console.log(`📬 In-app notification created for ${resident.first_name || 'Resident'}`);
+        } catch (notifError) {
+          console.error(`⚠️ Failed to log notification for ${resident.first_name}:`, notifError);
+        }
+      }
+    }
+    
+    console.log(`✅ Created in-app notifications for all ${residents.length} residents`);
 
+    // Collect all valid phone numbers from residents
+    const phoneNumbers = [];
     for (const resident of residents) {
       if (!resident.phone_number) {
         console.log(`⚠️ Skipping ${resident.first_name}: No phone number`);
         continue;
       }
 
-      try {
-        const response = await fetch("https://iprogsms.com/api/send", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            apikey: IPROGSMS_API_KEY,
-            number: resident.phone_number,
-            message: message
-          }),
-        });
-
-        const result = await response.json();
-
-        if (response.ok && result.status !== "error") {
-          successCount++;
-          console.log(`✅ SMS sent to ${resident.first_name} (${resident.phone_number})`);
-          results.push({ phone: resident.phone_number, success: true, name: resident.first_name });
-          
-          // Create notification record for this resident
-          try {
-            await supabase.from("notifications").insert({
-              user_id: resident.id,
-              title: "Garbage Collection Alert",
-              message: `The garbage truck is now in your area (${areaName}). Please prepare your waste for collection.`,
-              area: areaName,
-              is_read: false
-            });
-          } catch (notifError) {
-            console.error(`⚠️ Failed to log notification for ${resident.first_name}:`, notifError);
-          }
-        } else {
-          failCount++;
-          console.error(`❌ Failed to send SMS to ${resident.first_name}:`, result.message);
-          results.push({ phone: resident.phone_number, success: false, error: result.message, name: resident.first_name });
-        }
-
-        // Small delay to avoid rate limiting (100ms between requests)
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
-        failCount++;
-        console.error(`❌ Error sending SMS to ${resident.first_name}:`, error);
-        results.push({ phone: resident.phone_number, success: false, error: error.message, name: resident.first_name });
+      const formatted = formatPhoneNumber(resident.phone_number);
+      if (!formatted) {
+        console.error(`⚠️ Invalid phone number format for ${resident.first_name}: ${resident.phone_number}`);
+        continue;
       }
+
+      phoneNumbers.push(resident.phone_number); // Keep original format, sendIprogSMS will format it
     }
 
-    // Log summary notification for admin tracking (no user_id means it's a system notification)
+    let smsSuccess = false;
+    let smsError = null;
+
+    // Send 1 bulk SMS to all residents using the existing sendIprogSMS function (uses only 1 credit)
+    if (phoneNumbers.length > 0) {
+      console.log(`📱 Sending 1 bulk SMS to ${phoneNumbers.length} residents in ${areaName}...`);
+      
+      try {
+        // Use the existing bulk SMS function from otpService.js
+        // This ensures consistency and eliminates code duplication
+        const smsResult = await sendIprogSMS(message, phoneNumbers, phoneNumbers.length); // Set batchSize to all numbers to send in 1 batch
+        
+        if (smsResult.success) {
+          smsSuccess = true;
+          console.log(`✅ Bulk SMS sent successfully to ${phoneNumbers.length} residents in ${areaName} (used 1 credit)`);
+        } else {
+          smsError = smsResult.error || 'Failed to send SMS';
+          console.error(`❌ Failed to send bulk SMS:`, smsError);
+        }
+      } catch (error) {
+        console.error(`❌ Error sending bulk SMS:`, error);
+        smsError = error.message || String(error);
+      }
+    } else {
+      console.log(`⚠️ No valid phone numbers found for residents in ${areaName}`);
+    }
+
+    // Log summary notification for admin tracking
     try {
+      const summaryMessage = smsSuccess 
+        ? `Bulk SMS sent to ${phoneNumbers.length} residents in ${areaName} (used 1 credit). All ${residents.length} residents received in-app notifications.`
+        : `Failed to send bulk SMS to residents in ${areaName}. All ${residents.length} residents received in-app notifications.`;
+      
       await supabase.from("notifications").insert({
         title: "SMS Notification Summary",
-        message: `${successCount} out of ${residents.length} residents in ${areaName} successfully notified via SMS`,
+        message: summaryMessage,
         area: areaName,
         is_read: false
       });
@@ -106,11 +133,17 @@ export const notifyResidentsInArea = async (areaName, collectorName = "Garbage C
     }
 
     return {
-      success: true,
-      message: `Notified ${successCount} out of ${residents.length} residents`,
-      sentCount: successCount,
-      failedCount: failCount,
-      results: results
+      success: smsSuccess,
+      message: smsSuccess 
+        ? `Bulk SMS sent to ${phoneNumbers.length} residents in ${areaName} (used 1 credit). All ${residents.length} residents received in-app notifications.`
+        : `Failed to send SMS: ${smsError || 'Unknown error'}. All ${residents.length} residents received in-app notifications.`,
+      sentCount: smsSuccess ? phoneNumbers.length : 0,
+      failedCount: smsSuccess ? 0 : phoneNumbers.length,
+      results: phoneNumbers.map(phone => ({
+        phone: `+${phone}`,
+        success: smsSuccess,
+        error: smsSuccess ? null : smsError
+      }))
     };
   } catch (error) {
     console.error("Error in notifyResidentsInArea:", error);

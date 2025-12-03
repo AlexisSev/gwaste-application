@@ -208,6 +208,15 @@ export const updateCurrentAndNextAreas = (schedule, collectedAreas) => {
   let current = null;
   let next = null;
   
+  // Special case: If driver just started (no collected areas), always show first area as current
+  if (normalizedCollected.size === 0 && uncollectedSchedule.length > 0) {
+    current = uncollectedSchedule[0];
+    if (uncollectedSchedule.length > 1) {
+      next = uncollectedSchedule[1];
+    }
+    return { current, next };
+  }
+  
   // Strategy 1: Find current area based on time window (if we're within its scheduled time)
   for (let i = 0; i < uncollectedSchedule.length; i++) {
     const item = uncollectedSchedule[i];
@@ -258,10 +267,20 @@ export const updateCurrentAndNextAreas = (schedule, collectedAreas) => {
         }
       }
     } else if (futureAreas.length > 0) {
-      // No areas have started yet - first future area is next
-      next = futureAreas[0];
+      // No areas have started yet - first future area is current (where driver should go first)
+      current = futureAreas[0];
+      // Next area is the second future area, or next in schedule
+      if (futureAreas.length > 1) {
+        next = futureAreas[1];
+      } else if (uncollectedSchedule.length > 1) {
+        // Find next area in full schedule after current
+        const currentIndex = uncollectedSchedule.findIndex(item => item.location === current.location);
+        if (currentIndex >= 0 && currentIndex + 1 < uncollectedSchedule.length) {
+          next = uncollectedSchedule[currentIndex + 1];
+        }
+      }
     } else if (uncollectedSchedule.length > 0) {
-      // Fallback: use first uncollected area as current (shouldn't happen normally)
+      // Fallback: use first uncollected area as current
       current = uncollectedSchedule[0];
       if (uncollectedSchedule.length > 1) {
         next = uncollectedSchedule[1];
