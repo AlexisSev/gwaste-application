@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DraggableFloatingButton from '../../components/DraggableFloatingButton';
+import { handleNotificationPress } from '../../components/NotificationHandler';
 import { useResidentAuth } from '../../hooks/useResidentAuth';
 import { supabase } from '../../services/supabaseClient';
 import { responsiveFontSize } from '../../utils/responsive';

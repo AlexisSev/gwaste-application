@@ -16,6 +16,7 @@ import {
 import FlashMessage, { showMessage } from "react-native-flash-message";
 import { useResidentAuth } from "../../hooks/useResidentAuth";
 import { supabase } from "../../services/supabaseClient";
+import { router } from "expo-router";
 
 const ReportIssue = ({ navigation }) => {
   const { resident } = useResidentAuth();
@@ -303,7 +304,7 @@ const ReportIssue = ({ navigation }) => {
         {/* Cancel Button */}
         <TouchableOpacity
           style={styles.cancelButton}
-          onPress={() => navigation?.goBack()}
+          onPress={() => router.push('/resident/residenthome')}
           disabled={loading}
         >
           <Text style={styles.cancelButtonText}>Cancel</Text>

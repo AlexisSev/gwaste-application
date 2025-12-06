@@ -23,6 +23,7 @@ export default function ResidentTabLayout() {
     '/resident/GwasteChatbot',
     '/resident/report-issue',
     '/resident/settings',
+    '/resident/profile',
   ];
 
   const shouldHideTabBar = hideTabBarRoutes.includes(pathname);

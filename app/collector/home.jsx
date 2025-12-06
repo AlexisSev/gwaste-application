@@ -899,7 +899,7 @@ export default function LandingScreen() {
 
       // Insert truck issue into database using RPC function (bypasses RLS)
       const { data: insertedIssueId, error: insertError } = await supabase.rpc('insert_truck_issue', {
-        p_collector_id: collector?.id,
+        p_collector_id: parseInt(collector?.collector_id || collector?.id, 10),
         p_collector_name: collector?.firstName || collector?.driver || collector?.collector_name,
         p_issue_type: issueType.trim(),
         p_description: issueDescription.trim(),
@@ -1051,7 +1051,7 @@ export default function LandingScreen() {
       const collectorName = collector?.firstName || collector?.driver || collector?.collector_name || 'Collector';
       const adminNotification = {
         // Required fields
-        notification_type: 'collection', // or 'truck_issue' if you want a different type
+        notification_type: 'truck_issue',
         title: 'Truck Issue Reported',
         message: `${collectorName} (${routeNumbersText}) reported a truck issue: ${issueType.trim()}. ${issueDescription.trim().substring(0, 100)}${issueDescription.trim().length > 100 ? '...' : ''}`,
         
@@ -1624,7 +1624,6 @@ export default function LandingScreen() {
           style: "destructive",
           onPress: async () => {
             await logout();
-            router.replace('/login');
           }
         }
       ]

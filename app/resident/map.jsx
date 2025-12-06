@@ -1,13 +1,21 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable no-unused-vars */
-import { Feather } from '@expo/vector-icons';
-import * as Location from 'expo-location';
-import { useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { WebView } from 'react-native-webview';
-import { useResidentAuth } from '../../hooks/useResidentAuth';
-import { supabase } from '../../services/supabaseClient';
+import { Feather } from "@expo/vector-icons";
+import * as Location from "expo-location";
+import { useLocalSearchParams } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { WebView } from "react-native-webview";
+import { useResidentAuth } from "../../hooks/useResidentAuth";
+import { supabase } from "../../services/supabaseClient";
 
 export default function MapScreen() {
   const params = useLocalSearchParams();
@@ -21,11 +29,11 @@ export default function MapScreen() {
   const [destination, setDestination] = useState(null);
   const [routeCoords, setRouteCoords] = useState([]);
   const [pickupInfo, setPickupInfo] = useState({
-    type: 'Loading...',
-    estimatedArrival: 'Calculating...',
-    status: 'Loading...',
+    type: "Loading...",
+    estimatedArrival: "Calculating...",
+    status: "Loading...",
     nextCollector: null,
-    driverName: null
+    driverName: null,
   });
   const [truckSchedule, setTruckSchedule] = useState(null);
   const [selectedTruckId, setSelectedTruckId] = useState(null);
@@ -38,7 +46,7 @@ export default function MapScreen() {
   // If schedule screen passed a pickupType, show it immediately while we compute
   useEffect(() => {
     if (params && params.pickupType) {
-      setPickupInfo(prev => ({ ...prev, type: String(params.pickupType) }));
+      setPickupInfo((prev) => ({ ...prev, type: String(params.pickupType) }));
     }
   }, [params?.pickupType]);
 
@@ -56,12 +64,16 @@ export default function MapScreen() {
         if (window.userMarker && window.map) {
           // Update marker position
           window.userMarker.setLatLng([${newLat}, ${newLng}]);
-          ${shouldPan ? `
+          ${
+            shouldPan
+              ? `
           // Only pan if explicitly requested (e.g., initial load)
           window.map.panTo([${newLat}, ${newLng}], {
             animate: true,
             duration: 1.0
-          });` : ''}
+          });`
+              : ""
+          }
         }
       `;
       webviewRef.current.injectJavaScript(script);
@@ -184,34 +196,37 @@ export default function MapScreen() {
   // Function to calculate distance between two points
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the Earth in kilometers
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c; // Distance in kilometers
   };
 
   // Function to calculate estimated arrival time
   const calculateEstimatedArrival = (collector, userLocation) => {
-    if (!collector || !userLocation) return 'Calculating...';
-    
+    if (!collector || !userLocation) return "Calculating...";
+
     const distance = calculateDistance(
       userLocation.latitude,
       userLocation.longitude,
       collector.latitude,
       collector.longitude
     );
-    
+
     // Assume average speed of 30 km/h in city traffic
     const averageSpeed = 30; // km/h
     const timeInHours = distance / averageSpeed;
     const timeInMinutes = Math.round(timeInHours * 60);
-    
-    if (timeInMinutes < 1) return 'Less than 1 min';
+
+    if (timeInMinutes < 1) return "Less than 1 min";
     if (timeInMinutes < 60) return `${timeInMinutes} mins`;
-    
+
     const hours = Math.floor(timeInMinutes / 60);
     const minutes = timeInMinutes % 60;
     return `${hours}h ${minutes}m`;
@@ -219,19 +234,19 @@ export default function MapScreen() {
 
   // Function to determine pickup status
   const getPickupStatus = (collector, userLocation) => {
-    if (!collector || !userLocation) return 'Loading...';
-    
+    if (!collector || !userLocation) return "Loading...";
+
     const distance = calculateDistance(
       userLocation.latitude,
       userLocation.longitude,
       collector.latitude,
       collector.longitude
     );
-    
-    if (distance < 0.1) return 'Arrived'; // Less than 100m
-    if (distance < 0.5) return 'Nearby'; // Less than 500m
-    if (distance < 2) return 'On the way'; // Less than 2km
-    return 'Scheduled';
+
+    if (distance < 0.1) return "Arrived"; // Less than 100m
+    if (distance < 0.5) return "Nearby"; // Less than 500m
+    if (distance < 2) return "On the way"; // Less than 2km
+    return "Scheduled";
   };
 
   // Function to fetch truck schedule for a specific collector
@@ -239,22 +254,22 @@ export default function MapScreen() {
     try {
       setSelectedTruckId(collectorId);
       const { data, error } = await supabase
-        .from('routes')
-        .select('*')
-        .eq('driver', collectorId);
+        .from("routes")
+        .select("*")
+        .eq("driver", collectorId);
       if (error) throw error;
-      const collectorRoutes = (data || []).map(r => ({ id: r.id, ...r }));
+      const collectorRoutes = (data || []).map((r) => ({ id: r.id, ...r }));
 
       // Sort routes by time
       collectorRoutes.sort((a, b) => {
-        const timeA = a.time ? a.time.split(':').map(Number) : [0, 0];
-        const timeB = b.time ? b.time.split(':').map(Number) : [0, 0];
-        return (timeA[0] * 60 + timeA[1]) - (timeB[0] * 60 + timeB[1]);
+        const timeA = a.time ? a.time.split(":").map(Number) : [0, 0];
+        const timeB = b.time ? b.time.split(":").map(Number) : [0, 0];
+        return timeA[0] * 60 + timeA[1] - (timeB[0] * 60 + timeB[1]);
       });
 
       setTruckSchedule(collectorRoutes);
     } catch (error) {
-      console.error('Error fetching truck schedule:', error);
+      console.error("Error fetching truck schedule:", error);
       setTruckSchedule([]);
     }
   };
@@ -275,7 +290,7 @@ export default function MapScreen() {
           closest.latitude,
           closest.longitude
         );
-        activeCollectors.forEach(c => {
+        activeCollectors.forEach((c) => {
           if (c.latitude && c.longitude) {
             const d = calculateDistance(
               currentUserLoc.latitude,
@@ -283,101 +298,128 @@ export default function MapScreen() {
               c.latitude,
               c.longitude
             );
-            if (d < minDist) { minDist = d; closest = c; }
+            if (d < minDist) {
+              minDist = d;
+              closest = c;
+            }
           }
         });
         nextCollector = closest;
       }
       // Infer pickup type from the nearest collector's assigned route
       // Prefer route_type sent by the collector app; fallback to resolving via routes
-      let pickupType = (nextCollector && nextCollector.route_type) ? String(nextCollector.route_type) : 'General Waste';
+      let pickupType =
+        nextCollector && nextCollector.route_type
+          ? String(nextCollector.route_type)
+          : "General Waste";
       if (nextCollector) {
         try {
           // Special-case for dev test truck to validate UI quickly
-          if (nextCollector.collector_id === 'TEST_TRUCK') {
-            pickupType = 'Biodegradable (Demo)';
+          if (nextCollector.collector_id === "TEST_TRUCK") {
+            pickupType = "Biodegradable (Demo)";
           }
           // If route_type not present on the location row, resolve via routes as before
-          if (!pickupType || pickupType === 'General Waste' || pickupType === 'N/A') {
-          // 1) Resolve the driver's display identifier (used in routes.driver)
-          let resolvedDriver = null;
-          // Try by collector_id (string key)
-          let collectorsRow = null;
-          const { data: byCollectorId } = await supabase
-            .from('collectors')
-            .select('driver, firstName, id, collector_id')
-            .eq('collector_id', nextCollector.collector_id)
-            .maybeSingle();
-          if (byCollectorId) collectorsRow = byCollectorId;
-          // If not found, try by id (uuid)
-          if (!collectorsRow) {
-            const { data: byId } = await supabase
-              .from('collectors')
-              .select('driver, firstName, id, collector_id')
-              .eq('id', nextCollector.collector_id)
+          if (
+            !pickupType ||
+            pickupType === "General Waste" ||
+            pickupType === "N/A"
+          ) {
+            // 1) Resolve the driver's display identifier (used in routes.driver)
+            let resolvedDriver = null;
+            // Try by collector_id (string key)
+            let collectorsRow = null;
+            const { data: byCollectorId } = await supabase
+              .from("collectors")
+              .select("driver, firstName, id, collector_id")
+              .eq("collector_id", nextCollector.collector_id)
               .maybeSingle();
-            if (byId) collectorsRow = byId;
-          }
-          if (collectorsRow) {
-            resolvedDriver = collectorsRow.driver || collectorsRow.firstName || null;
-          }
+            if (byCollectorId) collectorsRow = byCollectorId;
+            // If not found, try by id (uuid)
+            if (!collectorsRow) {
+              const { data: byId } = await supabase
+                .from("collectors")
+                .select("driver, firstName, id, collector_id")
+                .eq("id", nextCollector.collector_id)
+                .maybeSingle();
+              if (byId) collectorsRow = byId;
+            }
+            if (collectorsRow) {
+              resolvedDriver =
+                collectorsRow.driver || collectorsRow.firstName || null;
+            }
 
-          // 2) Query routes by driver name (exact and ilike fallback)
-          if (resolvedDriver) {
-            let driverRoutes = [];
-            let err = null;
-            try {
-              const res1 = await supabase
-                .from('routes')
-                .select('*')
-                .eq('driver', resolvedDriver);
-              driverRoutes = res1.data || [];
-            } catch (_e1) { /* ignore */ }
-            if (driverRoutes.length === 0) {
+            // 2) Query routes by driver name (exact and ilike fallback)
+            if (resolvedDriver) {
+              let driverRoutes = [];
+              let err = null;
               try {
-                const res2 = await supabase
-                  .from('routes')
-                  .select('*')
-                  .ilike('driver', `%${resolvedDriver}%`);
-                driverRoutes = res2.data || [];
-              } catch (_e2) { /* ignore */ }
-            }
-            if (driverRoutes.length > 0) {
-              const route = driverRoutes[0];
-              if (route?.type) pickupType = route.type;
-              driverName = resolvedDriver;
-            }
-          } else {
-            // 3) Fallback: try matching routes.driver directly to collector_id string
-            const { data: routesData } = await supabase.from('routes').select('*');
-            (routesData || []).forEach(routeData => {
-              if ((routeData.driver === nextCollector.collector_id || (driverName && routeData.driver === driverName)) && routeData.type) {
-                pickupType = routeData.type;
-                driverName = routeData.driver || driverName;
+                const res1 = await supabase
+                  .from("routes")
+                  .select("*")
+                  .eq("driver", resolvedDriver);
+                driverRoutes = res1.data || [];
+              } catch (_e1) {
+                /* ignore */
               }
-            });
+              if (driverRoutes.length === 0) {
+                try {
+                  const res2 = await supabase
+                    .from("routes")
+                    .select("*")
+                    .ilike("driver", `%${resolvedDriver}%`);
+                  driverRoutes = res2.data || [];
+                } catch (_e2) {
+                  /* ignore */
+                }
+              }
+              if (driverRoutes.length > 0) {
+                const route = driverRoutes[0];
+                if (route?.type) pickupType = route.type;
+                driverName = resolvedDriver;
+              }
+            } else {
+              // 3) Fallback: try matching routes.driver directly to collector_id string
+              const { data: routesData } = await supabase
+                .from("routes")
+                .select("*");
+              (routesData || []).forEach((routeData) => {
+                if (
+                  (routeData.driver === nextCollector.collector_id ||
+                    (driverName && routeData.driver === driverName)) &&
+                  routeData.type
+                ) {
+                  pickupType = routeData.type;
+                  driverName = routeData.driver || driverName;
+                }
+              });
+            }
           }
-          }
-        } catch (_e) { /* ignore */ }
+        } catch (_e) {
+          /* ignore */
+        }
       }
-      const estimatedArrival = nextCollector ? calculateEstimatedArrival(nextCollector, currentUserLoc) : 'N/A';
-      const status = nextCollector ? getPickupStatus(nextCollector, currentUserLoc) : 'Scheduled';
+      const estimatedArrival = nextCollector
+        ? calculateEstimatedArrival(nextCollector, currentUserLoc)
+        : "N/A";
+      const status = nextCollector
+        ? getPickupStatus(nextCollector, currentUserLoc)
+        : "Scheduled";
       setPickupInfo({
         type: pickupType,
         estimatedArrival,
         status,
         nextCollector,
-        driverName: driverName || (nextCollector ? nextCollector.collector_id : null)
+        driverName:
+          driverName || (nextCollector ? nextCollector.collector_id : null),
       });
       return;
-
     } catch (error) {
-      console.error('Error fetching pickup info:', error);
+      console.error("Error fetching pickup info:", error);
       setPickupInfo({
-        type: 'Error loading data',
-        estimatedArrival: 'N/A',
-        status: 'Error',
-        nextCollector: null
+        type: "Error loading data",
+        estimatedArrival: "N/A",
+        status: "Error",
+        nextCollector: null,
       });
     }
   };
@@ -386,7 +428,9 @@ export default function MapScreen() {
   useEffect(() => {
     const fetchCollectors = async () => {
       try {
-        const { data, error } = await supabase.from('trucklocation').select('*');
+        const { data, error } = await supabase
+          .from("trucklocation")
+          .select("*");
         if (error) throw error;
 
         // Show all drivers that have ever reported a location.
@@ -401,10 +445,10 @@ export default function MapScreen() {
 
     // Fetch immediately
     fetchCollectors();
-    
+
     // Set up periodic refresh every 30 seconds as backup to real-time subscription
     const refreshInterval = setInterval(fetchCollectors, 30000);
-    
+
     return () => {
       clearInterval(refreshInterval);
     };
@@ -412,29 +456,40 @@ export default function MapScreen() {
 
   // 🔹 Subscribe to collector location updates in realtime
   useEffect(() => {
-    console.log('🔔 Setting up real-time subscription for truck locations');
-    
+    console.log("🔔 Setting up real-time subscription for truck locations");
+
     const channel = supabase
-      .channel('realtime:locations')
+      .channel("realtime:locations")
       .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'trucklocation' },
+        "postgres_changes",
+        { event: "*", schema: "public", table: "trucklocation" },
         (payload) => {
-          console.log('📦 Truck location updated in real-time:', payload.eventType, payload.new?.collector_id);
-          
-          if (payload.eventType === 'DELETE') {
+          console.log(
+            "📦 Truck location updated in real-time:",
+            payload.eventType,
+            payload.new?.collector_id
+          );
+
+          if (payload.eventType === "DELETE") {
             // Remove truck from map when deleted
             const deletedId = payload.old?.collector_id;
             if (deletedId) {
-              setCollectors((prev) => prev.filter((c) => c.collector_id !== deletedId));
+              setCollectors((prev) =>
+                prev.filter((c) => c.collector_id !== deletedId)
+              );
             }
-          } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          } else if (
+            payload.eventType === "INSERT" ||
+            payload.eventType === "UPDATE"
+          ) {
             // Add or update truck location
             const newDriver = payload.new;
             if (newDriver && newDriver.latitude && newDriver.longitude) {
               setCollectors((prev) => {
                 // Always keep a single "last known" record per collector_id.
-                const others = prev.filter((c) => c.collector_id !== newDriver.collector_id);
+                const others = prev.filter(
+                  (c) => c.collector_id !== newDriver.collector_id
+                );
                 return [...others, newDriver];
               });
             }
@@ -442,16 +497,16 @@ export default function MapScreen() {
         }
       )
       .subscribe((status) => {
-        console.log('📡 Real-time subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Successfully subscribed to truck location updates');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Error subscribing to truck location updates');
+        console.log("📡 Real-time subscription status:", status);
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Successfully subscribed to truck location updates");
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("❌ Error subscribing to truck location updates");
         }
       });
 
     return () => {
-      console.log('🔕 Unsubscribing from truck location updates');
+      console.log("🔕 Unsubscribing from truck location updates");
       supabase.removeChannel(channel);
     };
   }, []);
@@ -460,31 +515,38 @@ export default function MapScreen() {
   useEffect(() => {
     const checkCollectionStatus = async () => {
       try {
-        const today = new Date().toISOString().split('T')[0];
-        const residentPurok = resident?.purok || '';
-        const residentAddress = resident?.resident_address || resident?.address || '';
-        
+        const today = new Date().toISOString().split("T")[0];
+        const residentPurok = resident?.purok || "";
+        const residentAddress =
+          resident?.resident_address || resident?.address || "";
+
         const { data: collections, error } = await supabase
-          .from('collections')
-          .select('areas_collected, collected_at')
-          .eq('collected_date', today);
-        
+          .from("collections")
+          .select("areas_collected, collected_at")
+          .eq("collected_date", today);
+
         if (error) throw error;
-        
+
         let collected = false;
         let collectedTime = null;
-        
-        (collections || []).forEach(row => {
-          const arr = Array.isArray(row.areas_collected) ? row.areas_collected : [];
-          arr.forEach(area => {
+
+        (collections || []).forEach((row) => {
+          const arr = Array.isArray(row.areas_collected)
+            ? row.areas_collected
+            : [];
+          arr.forEach((area) => {
             if (area) {
               const areaLower = area.toLowerCase();
               const purokLower = residentPurok.toLowerCase();
               const addressLower = residentAddress.toLowerCase();
-              
+
               // Check if this area matches resident's purok or address
-              if ((purokLower && areaLower.includes(purokLower)) ||
-                  (addressLower && (areaLower.includes(addressLower) || addressLower.includes(areaLower)))) {
+              if (
+                (purokLower && areaLower.includes(purokLower)) ||
+                (addressLower &&
+                  (areaLower.includes(addressLower) ||
+                    addressLower.includes(areaLower)))
+              ) {
                 collected = true;
                 if (row.collected_at && !collectedTime) {
                   collectedTime = row.collected_at;
@@ -493,10 +555,10 @@ export default function MapScreen() {
             }
           });
         });
-        
+
         setIsCollected(collected);
         setCollectedAt(collectedTime);
-        
+
         // If collected, clear only the route polyline (keep trucks visible)
         if (collected && mapInitialized && webviewRef.current) {
           const clearRouteScript = `
@@ -508,24 +570,24 @@ export default function MapScreen() {
           webviewRef.current.injectJavaScript(clearRouteScript);
         }
       } catch (error) {
-        console.error('Error checking collection status:', error);
+        console.error("Error checking collection status:", error);
       }
     };
-    
+
     if (resident) {
       checkCollectionStatus();
       // Subscribe to collection updates
       const channel = supabase
-        .channel('collection-status')
+        .channel("collection-status")
         .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'collections' },
+          "postgres_changes",
+          { event: "*", schema: "public", table: "collections" },
           () => {
             checkCollectionStatus();
           }
         )
         .subscribe();
-      
+
       return () => {
         supabase.removeChannel(channel);
       };
@@ -580,7 +642,7 @@ export default function MapScreen() {
   const requestLocationPermission = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
+      if (status === "granted") {
         setHasLocationPermission(true);
         getCurrentLocation();
         startLocationTracking(); // Start continuous tracking for smooth updates
@@ -616,7 +678,11 @@ export default function MapScreen() {
   const startLocationTracking = async () => {
     try {
       await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 10 }, // every 3 sec or 10m
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 3000,
+          distanceInterval: 10,
+        }, // every 3 sec or 10m
         (loc) => {
           const coords = {
             latitude: loc.coords.latitude,
@@ -629,17 +695,17 @@ export default function MapScreen() {
         }
       );
     } catch (error) {
-      console.error('Error starting location tracking:', error);
+      console.error("Error starting location tracking:", error);
     }
   };
 
   const showLocationPermissionAlert = () => {
     Alert.alert(
-      'Location Permission Required',
-      'Enable location services to view your position on the map.',
+      "Location Permission Required",
+      "Enable location services to view your position on the map.",
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Enable Location', onPress: requestLocationPermission },
+        { text: "Cancel", style: "cancel" },
+        { text: "Enable Location", onPress: requestLocationPermission },
       ]
     );
   };
@@ -665,14 +731,16 @@ export default function MapScreen() {
     const fetchDriverNames = async () => {
       try {
         const active = getActiveCollectors();
-        const ids = Array.from(new Set(active.map((c) => c.collector_id).filter(Boolean)));
+        const ids = Array.from(
+          new Set(active.map((c) => c.collector_id).filter(Boolean))
+        );
         if (ids.length === 0) return;
 
         // 1) Load collector profiles to get driver names
         const { data: collectorRows, error: collectorError } = await supabase
-          .from('collectors')
-          .select('collector_id, driver, firstName')
-          .in('collector_id', ids);
+          .from("collectors")
+          .select("collector_id, driver, firstName")
+          .in("collector_id", ids);
         if (collectorError) throw collectorError;
 
         const nameMap = {};
@@ -692,16 +760,16 @@ export default function MapScreen() {
         let routesMapByDriver = {};
         if (driverNamesArr.length > 0) {
           const { data: routeRows, error: routesError } = await supabase
-            .from('routes')
-            .select('driver, route')
-            .in('driver', driverNamesArr);
+            .from("routes")
+            .select("driver, route")
+            .in("driver", driverNamesArr);
           if (routesError) {
-            console.error('Error loading routes for drivers:', routesError);
+            console.error("Error loading routes for drivers:", routesError);
           } else {
             (routeRows || []).forEach((r) => {
               // Use the first route we see for this driver as the primary route
               if (r.driver && r.route && routesMapByDriver[r.driver] == null) {
-              routesMapByDriver[r.driver] = r.route;
+                routesMapByDriver[r.driver] = r.route;
               }
             });
           }
@@ -728,15 +796,15 @@ export default function MapScreen() {
   // Function to get status text style based on status
   const getStatusStyle = (status) => {
     switch (status) {
-      case 'Arrived':
+      case "Arrived":
         return styles.arrived;
-      case 'Nearby':
+      case "Nearby":
         return styles.nearby;
-      case 'On the way':
+      case "On the way":
         return styles.onTheWay;
-      case 'Scheduled':
+      case "Scheduled":
         return styles.scheduled;
-      case 'Error':
+      case "Error":
         return styles.error;
       default:
         return styles.onTheWay;
@@ -745,11 +813,11 @@ export default function MapScreen() {
 
   // Function to format time
   const formatTime = (timeString) => {
-    if (!timeString) return '';
+    if (!timeString) return "";
     try {
-      const [hours, minutes] = timeString.split(':');
+      const [hours, minutes] = timeString.split(":");
       const hour = parseInt(hours);
-      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const ampm = hour >= 12 ? "PM" : "AM";
       const displayHour = hour % 12 || 12;
       return `${displayHour}:${minutes} ${ampm}`;
     } catch (error) {
@@ -817,23 +885,27 @@ export default function MapScreen() {
         <View style={styles.mapContainer}>
           <WebView
             ref={webviewRef}
-            originWhitelist={['*']}
+            originWhitelist={["*"]}
             source={{ html: getMapHtml() }}
             style={styles.webview}
             onMessage={(event) => {
               try {
                 const data = JSON.parse(event.nativeEvent.data);
-                if (data.type === 'mapReady') {
+                if (data.type === "mapReady") {
                   setMapInitialized(true);
                   // Set initial data when map is ready
                   if (location) {
-                    updateUserLocation(location.latitude, location.longitude, true);
+                    updateUserLocation(
+                      location.latitude,
+                      location.longitude,
+                      true
+                    );
                   }
                   if (routeCoords.length > 0) {
                     updateRoute(routeCoords);
                   }
                   updateCollectorMarkers(getEnrichedActiveCollectors());
-                } else if (data.type === 'truckClicked') {
+                } else if (data.type === "truckClicked") {
                   fetchTruckSchedule(data.collectorId);
                 }
               } catch (e) {
@@ -848,10 +920,7 @@ export default function MapScreen() {
 
       {/* Show completed card if collection is done, otherwise show pickup info */}
       {isCollected ? (
-        <TouchableOpacity 
-          activeOpacity={0.9} 
-          style={styles.completedCard}
-        >
+        <TouchableOpacity activeOpacity={0.9} style={styles.completedCard}>
           <View style={styles.completedCardContent}>
             <View style={styles.completedIconContainer}>
               <Feather name="check-circle" size={48} color="#4CAF50" />
@@ -862,30 +931,36 @@ export default function MapScreen() {
             </Text>
             {collectedAt && (
               <Text style={styles.completedTime}>
-                Collected at: {new Date(collectedAt).toLocaleTimeString('en-US', { 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
+                Collected at:{" "}
+                {new Date(collectedAt).toLocaleTimeString("en-US", {
+                  hour: "2-digit",
+                  minute: "2-digit",
                 })}
               </Text>
             )}
           </View>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity 
-          activeOpacity={0.9} 
+        <TouchableOpacity
+          activeOpacity={0.9}
           style={styles.floatingCard}
           onPress={fetchPickupInfo}
         >
           <Text style={styles.scheduleTitle}>
-            Today&apos;s Pickup: <Text style={styles.locationText}>{pickupInfo.type}</Text>
+            Today&apos;s Pickup:{" "}
+            <Text style={styles.locationText}>{pickupInfo.type}</Text>
           </Text>
           <Text style={styles.estimatedArrival}>
-            Estimated Arrival: <Text style={styles.timeText}>{pickupInfo.estimatedArrival}</Text>
+            Estimated Arrival:{" "}
+            <Text style={styles.timeText}>{pickupInfo.estimatedArrival}</Text>
           </Text>
           <Text style={styles.statusText}>
-            Status: <Text style={getStatusStyle(pickupInfo.status)}>{pickupInfo.status}</Text>
+            Status:{" "}
+            <Text style={getStatusStyle(pickupInfo.status)}>
+              {pickupInfo.status}
+            </Text>
           </Text>
-        
+
           {!pickupInfo.nextCollector && (
             <Text style={styles.tapToRefresh}>No active driver right now</Text>
           )}
@@ -903,7 +978,10 @@ export default function MapScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                🚛 Driver {selectedTruckId} Schedule
+                🚛{" "}
+                {driverNames[selectedTruckId] ||
+                  selectedTruckId ||
+                  "Driver"}{" "}
               </Text>
               <TouchableOpacity
                 style={styles.closeButton}
@@ -912,14 +990,14 @@ export default function MapScreen() {
                 <Text style={styles.closeButtonText}>✕</Text>
               </TouchableOpacity>
             </View>
-            
+
             <ScrollView style={styles.scheduleList}>
               {truckSchedule && truckSchedule.length > 0 ? (
                 truckSchedule.map((route, index) => (
                   <View key={route.id || index} style={styles.scheduleItem}>
                     <View style={styles.scheduleTimeContainer}>
                       <Text style={styles.scheduleTime}>
-                        {route.time ? formatTime(route.time) : 'TBD'}
+                        {route.time ? formatTime(route.time) : "TBD"}
                       </Text>
                       {route.endTime && (
                         <Text style={styles.scheduleEndTime}>
@@ -929,14 +1007,14 @@ export default function MapScreen() {
                     </View>
                     <View style={styles.scheduleDetails}>
                       <Text style={styles.scheduleRoute}>
-                        Route {route.route || 'N/A'}
+                        Route {route.route || "N/A"}
                       </Text>
                       <Text style={styles.scheduleType}>
-                        {route.type || 'General Waste'}
+                        {route.type || "General Waste"}
                       </Text>
                       {route.areas && route.areas.length > 0 && (
                         <Text style={styles.scheduleAreas}>
-                          Areas: {route.areas.join(', ')}
+                          Areas: {route.areas.join(", ")}
                         </Text>
                       )}
                       {route.frequency && (
@@ -966,99 +1044,119 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   devButton: {
-    position: 'absolute',
+    position: "absolute",
     right: 16,
     bottom: 92,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: '#1976D2',
+    backgroundColor: "#1976D2",
     borderRadius: 8,
     elevation: 4,
   },
-  devButtonText: { color: '#fff', fontWeight: '700' },
+  devButtonText: { color: "#fff", fontWeight: "700" },
   webview: { ...StyleSheet.absoluteFillObject },
-  placeholder: { flex: 1, backgroundColor: '#f2f2f2' },
+  placeholder: { flex: 1, backgroundColor: "#f2f2f2" },
   floatingCard: {
-    position: 'absolute',
+    position: "absolute",
     left: 16,
     right: 16,
     bottom: 110,
     padding: 14,
     borderRadius: 12,
-    backgroundColor: 'white',
-    shadowColor: '#000',
+    backgroundColor: "white",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 6,
     zIndex: 998,
   },
-  scheduleTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 4, color: '#000' },
-  locationText: { fontWeight: '800', color: '#4CAF50' },
-  estimatedArrival: { fontSize: 14, marginBottom: 4, color: '#000' },
-  timeText: { fontWeight: '600', color: '#4CAF50' },
-  statusText: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#000' },
-  onTheWay: { color: '#4CAF50' },
-  arrived: { color: '#FF6B35', fontWeight: 'bold' },
-  nearby: { color: '#FFA726', fontWeight: 'bold' },
-  scheduled: { color: '#9E9E9E' },
-  error: { color: '#F44336' },
-  collectorInfo: { fontSize: 12, color: '#666', marginBottom: 12, fontStyle: 'italic' },
-  tapToRefresh: { fontSize: 10, color: '#999', textAlign: 'center', marginTop: 4 },
+  scheduleTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 4,
+    color: "#000",
+  },
+  locationText: { fontWeight: "800", color: "#4CAF50" },
+  estimatedArrival: { fontSize: 14, marginBottom: 4, color: "#000" },
+  timeText: { fontWeight: "600", color: "#4CAF50" },
+  statusText: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 8,
+    color: "#000",
+  },
+  onTheWay: { color: "#4CAF50" },
+  arrived: { color: "#FF6B35", fontWeight: "bold" },
+  nearby: { color: "#FFA726", fontWeight: "bold" },
+  scheduled: { color: "#9E9E9E" },
+  error: { color: "#F44336" },
+  collectorInfo: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 12,
+    fontStyle: "italic",
+  },
+  tapToRefresh: {
+    fontSize: 10,
+    color: "#999",
+    textAlign: "center",
+    marginTop: 4,
+  },
   ctaButton: {
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: '#4CAF50',
+    backgroundColor: "#4CAF50",
   },
-  ctaText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
+  ctaText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
   // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '80%',
+    maxHeight: "80%",
     paddingBottom: 20,
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: "#e0e0e0",
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
   },
   closeButton: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
   },
   closeButtonText: {
     fontSize: 16,
-    color: '#666',
+    color: "#666",
   },
   scheduleList: {
     maxHeight: 400,
   },
   scheduleItem: {
-    flexDirection: 'row',
+    flexDirection: "row",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: "#f0f0f0",
   },
   scheduleTimeContainer: {
     width: 80,
@@ -1066,12 +1164,12 @@ const styles = StyleSheet.create({
   },
   scheduleTime: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4CAF50',
+    fontWeight: "bold",
+    color: "#4CAF50",
   },
   scheduleEndTime: {
     fontSize: 12,
-    color: '#666',
+    color: "#666",
     marginTop: 2,
   },
   scheduleDetails: {
@@ -1079,71 +1177,71 @@ const styles = StyleSheet.create({
   },
   scheduleRoute: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 4,
   },
   scheduleType: {
     fontSize: 14,
-    color: '#4CAF50',
+    color: "#4CAF50",
     marginBottom: 4,
   },
   scheduleAreas: {
     fontSize: 12,
-    color: '#666',
+    color: "#666",
     marginBottom: 2,
   },
   scheduleFrequency: {
     fontSize: 12,
-    color: '#999',
-    fontStyle: 'italic',
+    color: "#999",
+    fontStyle: "italic",
   },
   noScheduleText: {
-    textAlign: 'center',
-    color: '#666',
+    textAlign: "center",
+    color: "#666",
     padding: 20,
     fontSize: 16,
   },
   completedCard: {
-    position: 'absolute',
+    position: "absolute",
     left: 16,
     right: 16,
     bottom: 110,
     borderRadius: 16,
-    backgroundColor: '#E8F5E9',
-    shadowColor: '#000',
+    backgroundColor: "#E8F5E9",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
     zIndex: 998,
     borderWidth: 2,
-    borderColor: '#4CAF50',
+    borderColor: "#4CAF50",
   },
   completedCardContent: {
     padding: 20,
-    alignItems: 'center',
+    alignItems: "center",
   },
   completedIconContainer: {
     marginBottom: 12,
   },
   completedTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2E7D32',
+    fontWeight: "bold",
+    color: "#2E7D32",
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   completedMessage: {
     fontSize: 16,
-    color: '#388E3C',
-    textAlign: 'center',
+    color: "#388E3C",
+    textAlign: "center",
     marginBottom: 8,
   },
   completedTime: {
     fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
+    color: "#666",
+    textAlign: "center",
     marginTop: 4,
   },
 });
