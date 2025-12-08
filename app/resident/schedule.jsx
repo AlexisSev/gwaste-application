@@ -2,7 +2,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,8 +10,8 @@ import { router } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from '../../hooks/useColorScheme';
 import { useResidentAuth } from '../../hooks/useResidentAuth';
+import { useScheduleNotifications } from '../../hooks/useScheduleNotifications';
 import { supabase } from '../../services/supabaseClient';
-
 
 export default function ScheduleScreen() {
   const colorScheme = useColorScheme();
@@ -22,10 +22,29 @@ export default function ScheduleScreen() {
   const [selectedRouteId, setSelectedRouteId] = useState(null);
   const [isDropdownVisible, setIsDropdownVisible] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const { checkAndShowNotification } = useScheduleNotifications(resident?.id);
 
   useEffect(() => {
     fetchRoutes();
-  }, []);
+    // Set up an interval to check for upcoming collections every 5 minutes
+    const interval = setInterval(() => {
+      if (resident?.id) {
+        supabase
+          .from('schedules')
+          .select('*')
+          .eq('resident_id', resident.id)
+          .gte('collection_time', new Date().toISOString())
+          .order('collection_time', { ascending: true })
+          .limit(1)
+          .then(({ data }) => {
+            if (data && data.length > 0) {
+              checkAndShowNotification(data[0]);
+            }
+          });
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+    return () => clearInterval(interval);
+  }, [fetchRoutes, resident?.id, checkAndShowNotification]);
 
   // Load notifications for the resident
   const loadNotifications = async () => {
@@ -103,8 +122,22 @@ export default function ScheduleScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resident?.id]);
 
-  const fetchRoutes = async () => {
+  const fetchRoutes = useCallback(async () => {
     try {
+      // Check for upcoming collections when routes are loaded
+      if (resident?.id) {
+        const { data: upcoming } = await supabase
+          .from('schedules')
+          .select('*')
+          .eq('resident_id', resident.id)
+          .gte('collection_time', new Date().toISOString())
+          .order('collection_time', { ascending: true })
+          .limit(1);
+
+        if (upcoming && upcoming.length > 0) {
+          checkAndShowNotification(upcoming[0]);
+        }
+      }
       setLoading(true);
       const { data, error } = await supabase
         .from('routes')
@@ -127,8 +160,34 @@ export default function ScheduleScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  });
 
+
+  const formatSingleTime = (timeStr) => {
+    if (!timeStr) return '';
+    try {
+      // Remove any AM/PM and trim whitespace
+      timeStr = timeStr.replace(/[a-zA-Z]/g, '').trim();
+      
+      // Parse hours and minutes
+      const [hours, minutes = '00'] = timeStr.split(':');
+      let h = parseInt(hours, 10);
+      const m = parseInt(minutes, 10) || 0;
+      
+      // Convert to 12-hour format
+      const period = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12; // Convert 0 to 12 for 12 AM
+      
+      // Format with leading zeros
+      const formattedHours = h.toString().padStart(2, '0');
+      const formattedMinutes = m.toString().padStart(2, '0');
+      
+      return `${formattedHours}:${formattedMinutes} ${period}`;
+    } catch (error) {
+      console.error('Error formatting single time:', error);
+      return timeStr; // Return original string if formatting fails
+    }
+  };
 
   const formatTime = (timeString) => {
     if (!timeString) return '';
@@ -143,22 +202,8 @@ export default function ScheduleScreen() {
       // Handle single time format
       return formatSingleTime(timeString);
     } catch (error) {
-      return timeString;
-    }
-  };
-
-  const formatSingleTime = (timeStr) => {
-    if (!timeStr) return '';
-    try {
-      // Remove any existing AM/PM
-      const cleanTime = timeStr.replace(/[AP]M/i, '').trim();
-      const [hours, minutes] = cleanTime.split(':');
-      const hour = parseInt(hours);
-      const ampm = hour >= 12 ? 'PM' : 'AM';
-      const displayHour = hour % 12 || 12;
-      return `${displayHour}:${minutes || '00'} ${ampm}`;
-    } catch (error) {
-      return timeStr;
+      console.error('Error formatting time:', error);
+      return timeString; // Return original string if formatting fails
     }
   };
 
