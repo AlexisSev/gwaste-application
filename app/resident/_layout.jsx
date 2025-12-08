@@ -24,6 +24,7 @@ export default function ResidentTabLayout() {
     '/resident/report-issue',
     '/resident/settings',
     '/resident/profile',
+    '/resident/report-issue'
   ];
 
   const shouldHideTabBar = hideTabBarRoutes.includes(pathname);
