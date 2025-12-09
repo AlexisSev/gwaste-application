@@ -1,23 +1,10 @@
-import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Image as RNImage, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image as RNImage, StyleSheet, Text, View } from 'react-native';
 import PrimaryButton from '../components/ui/PrimaryButton';
-import { useNotification } from '../hooks/useInAppNotification';
 import { responsiveFontSize, vw } from '../utils/responsive';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { showNotification } = useNotification();
-  
-  const handleTestNotification = () => {
-    showNotification({
-      title: 'Welcome to G-Waste!',
-      message: 'This is a test notification from your landing page.',
-      type: 'success',
-      duration: 3000
-    });
-  };
-  
   return (
     <View style={styles.container}>
       {/* Logo and Tagline Section */}
@@ -41,22 +28,6 @@ export default function HomeScreen() {
         >
           <Text style={styles.getStartedButtonText}>Get Started</Text>
         </PrimaryButton>
-        
-        {/* <TouchableOpacity 
-          style={styles.testButton}
-          onPress={handleTestNotification}
-        >
-          <MaterialIcons name="notifications" size={20} color="#458A3D" />
-          <Text style={styles.testButtonText}>Test Notification</Text>
-        </TouchableOpacity> */}
-        
-     
-        {/* <TouchableOpacity 
-          style={styles.testLink}
-          onPress={() => router.push('/test/notification-test')}
-        >
-          <Text style={styles.testLinkText}>More Notification Tests →</Text>
-        </TouchableOpacity> */}
       </View>
     </View>
   );
@@ -99,7 +70,6 @@ const styles = StyleSheet.create({
   },
   buttonSection: {
     paddingBottom: 40,
-    alignItems: 'center',
   },
   getStartedButton: {
     backgroundColor: '#458A3D',
@@ -114,31 +84,4 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(18),
     textAlign: 'center',
   },
-  testButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 15,
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#458A3D',
-    backgroundColor: '#F0F8EF',
-    width: '100%',
-  },
-  testButtonText: {
-    color: '#458A3D',
-    fontWeight: '500',
-    fontSize: responsiveFontSize(16),
-    marginLeft: 8,
-  },
-  testLink: {
-    marginTop: 12,
-    padding: 8,
-  },
-  testLinkText: {
-    color: '#666',
-    fontSize: responsiveFontSize(14),
-    textDecorationLine: 'underline',
-  },
-});
+}); 

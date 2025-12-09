@@ -1,6 +1,6 @@
+import React, { useEffect } from 'react';
+import { View, Image, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
-import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -49,13 +49,12 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: '#2E7D32',
-    marginBottom: 32,
+    color: '#388E3C',
     textAlign: 'center',
   },
   spinner: {
     marginTop: 24,
-  }
+  },
 });
 
 

@@ -32,7 +32,6 @@
     "expo-linking": "~8.0.10",
     "expo-location": "~19.0.8",
     "expo-maps": "~0.12.9",
-    "expo-notifications": "~0.32.14",
     "expo-router": "~6.0.17",
     "expo-speech": "~14.0.8",
     "expo-splash-screen": "~31.0.12",
@@ -43,8 +42,8 @@
     "leaflet": "^1.9.4",
     "lucide-react-native": "^0.525.0",
     "onesignal-expo-plugin": "^2.0.3",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "react": "19.2.1",
+    "react-dom": "19.2.1",
     "react-leaflet": "^5.0.0",
     "react-native": "0.81.5",
     "react-native-flash-message": "^0.4.2",
@@ -60,11 +59,10 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
-    "@types/react": "~19.1.10",
+    "@types/react": "~19.2.1",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
     "expo-module-scripts": "^4.1.10",
-    "react-native-worklets": "^0.6.0",
     "supabase": "^2.45.5"
   },
   "private": true

@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
-import * as Notifications from 'expo-notifications';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 
@@ -77,17 +76,6 @@ export const ResidentAuthProvider = ({ children }) => {
 
     await AsyncStorage.setItem('residents', JSON.stringify(match));
     setResident(match);
-    
-    // Show welcome notification
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '👋 Welcome Back!',
-        body: `Welcome back, ${match.first_name}! You've successfully logged in.`,
-        data: { data: 'login_success' },
-      },
-      trigger: { seconds: 1 }, // Show after 1 second
-    });
-    
     return match;
   };
 

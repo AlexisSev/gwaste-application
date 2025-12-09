@@ -3,7 +3,7 @@ import { Picker } from '@react-native-picker/picker';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { AlertCircle, CheckCircle, Navigation, Truck } from 'lucide-react-native';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GPS_CONFIG } from '../../constants/MapConfig';
@@ -845,34 +845,38 @@ export default function LandingScreen() {
     }
   };
 
-  // Manual collection button handler
-  const handleManualCollection = async (area, routeNumber, routeId) => {
-    // Debug: Log what's being passed
-    console.log('🔘 Manual collection clicked:', { area, routeNumber, routeId, routeIdType: typeof routeId });
-    
-    if (!routeId) {
-      console.warn('⚠️ WARNING: routeId is missing when marking area as collected!', { area, routeNumber });
-    }
-    
+  const confirmScheduleCollection = (area, routeNumber) => new Promise((resolve) => {
+    const routeLabel = routeNumber ? `Route ${routeNumber}` : 'this schedule item';
     Alert.alert(
-      'Mark as Collected',
-      `Are you sure you want to mark ${area} as collected?`,
+      'Confirm Collection',
+      `Are you sure you want to mark ${routeLabel} (${area}) as collected?`,
       [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Mark Collected',
-          onPress: async () => {
-            try {
-              await markAreaAsCollected(area, routeNumber, routeId);
-              Alert.alert('Success', `${area} has been marked as collected and saved to database!`);
-            } catch (error) {
-              Alert.alert('Error', `Failed to mark area as collected: ${error.message}`);
-            }
-          }
-        }
-      ]
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Yes, mark collected', style: 'destructive', onPress: () => resolve(true) },
+      ],
+      { cancelable: true }
     );
-  };
+  });
+
+  // Manual collection button handler
+ const handleManualCollection = async (area, routeNumber, routeId) => {
+  // Debug: Log what's being passed
+  console.log('🔘 Manual collection clicked:', { area, routeNumber, routeId, routeIdType: typeof routeId });
+  
+  if (!routeId) {
+    console.warn('⚠️ WARNING: routeId is missing when marking area as collected!', { area, routeNumber });
+  }
+
+  const confirmed = await confirmScheduleCollection(area, routeNumber);
+  if (!confirmed) return;
+
+  try {
+    await markAreaAsCollected(area, routeNumber, routeId);
+    Alert.alert('Success', `${area} has been marked as collected and saved to database!`);
+  } catch (error) {
+    Alert.alert('Error', `Failed to mark area as collected: ${error.message}`);
+  }
+};
 
   const handleReportTruckIssue = () => {
     setIsReportModalVisible(true);
@@ -1753,85 +1757,82 @@ export default function LandingScreen() {
               todaysSchedule.map((item, idx) => {
                 const isCollected = item.collected || collectedAreas.has(item.location);
                 return (
-                  <TouchableOpacity
-                    style={[
-                      styles.scheduleItem,
-                      isCollected && styles.scheduleItemCollected
-                    ]}
-                    key={idx}
-                    onPress={() => {
-                      if (!isCollected) {
-                        console.log('🔘 Card clicked - Schedule item data:', {
-                          location: item.location,
-                          routeNumber: item.routeNumber,
-                          routeId: item.routeId,
-                          rawLocation: item.location,
-                          locationType: typeof item.location
-                        });
-                        handleManualCollection(item.location, item.routeNumber, item.routeId);
-                      }
-                    }}
-                    disabled={isCollected}
-                    activeOpacity={isCollected ? 1 : 0.6}
-                  >
-                    <View style={styles.scheduleTimeContainer}>
-                      <Text style={[
-                        styles.scheduleTime,
-                        isCollected && styles.scheduleTimeCollected
-                      ]}>
-                        {formatTime(item.time)} - {formatTime(item.endTime)}
-                      </Text>
-                      <Text style={[
-                        styles.scheduleRoute,
-                        isCollected && styles.scheduleRouteCollected
-                      ]}>
-                        Route {item.routeNumber}
-                      </Text>
-                      {item.areaIndex && (
-                        <Text style={[
-                          styles.areaIndex,
-                          isCollected && styles.areaIndexCollected
-                        ]}>
-                          Area {item.areaIndex}
-                        </Text>
-                      )}
+            <TouchableOpacity
+              style={[
+                styles.scheduleItem,
+                isCollected && styles.scheduleItemCollected
+              ]}
+              key={idx}
+              activeOpacity={1} // Card itself is not clickable anymore
+            >
+              <View style={styles.scheduleTimeContainer}>
+                <Text style={[
+                  styles.scheduleTime,
+                  isCollected && styles.scheduleTimeCollected
+                ]}>
+                  {formatTime(item.time)} - {formatTime(item.endTime)}
+                </Text>
+                <Text style={[
+                  styles.scheduleRoute,
+                  isCollected && styles.scheduleRouteCollected
+                ]}>
+                  Route {item.routeNumber}
+                </Text>
+                {item.areaIndex && (
+                  <Text style={[
+                    styles.areaIndex,
+                    isCollected && styles.areaIndexCollected
+                  ]}>
+                    Area {item.areaIndex}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.scheduleLocationContainer}>
+                <View style={styles.locationHeader}>
+                  <Text style={[
+                    styles.scheduleLocation,
+                    isCollected && styles.scheduleLocationCollected
+                  ]}>
+                    {item.location}
+                  </Text>
+                  {isCollected ? (
+                    <View style={styles.collectedIndicator}>
+                      <CheckCircle size={20} color="#2E7D32" />
+                      <Text style={styles.collectedText}>Collected</Text>
                     </View>
-                    <View style={styles.scheduleLocationContainer}>
-                      <View style={styles.locationHeader}>
-                        <Text style={[
-                          styles.scheduleLocation,
-                          isCollected && styles.scheduleLocationCollected
-                        ]}>
-                          {item.location}
-                        </Text>
-                        {isCollected && (
-                          <View style={styles.collectedIndicator}>
-                            <CheckCircle size={20} color="#2E7D32" />
-                            <Text style={styles.collectedText}>Collected</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={[
-                        styles.scheduleType,
-                        isCollected && styles.scheduleTypeCollected
-                      ]}>
-                        {item.type}
-                      </Text>
-                      {item.frequency && (
-                        <Text style={[
-                          styles.scheduleFrequency,
-                          isCollected && styles.scheduleFrequencyCollected
-                        ]}>
-                          {item.frequency}
-                        </Text>
-                      )}
-                      {isCollected && item.collectedAt && (
-                        <Text style={styles.collectedTime}>
-                          Collected at: {new Date(item.collectedAt).toLocaleTimeString()}
-                        </Text>
-                      )}
-                    </View>
-                  </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.markCollectedButton}
+                      onPress={() => handleManualCollection(item.location, item.routeNumber, item.routeId)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.markCollectedButtonText}>Mark Collected</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <Text style={[
+                  styles.scheduleType,
+                  isCollected && styles.scheduleTypeCollected
+                ]}>
+                  {item.type}
+                </Text>
+                {item.frequency && (
+                  <Text style={[
+                    styles.scheduleFrequency,
+                    isCollected && styles.scheduleFrequencyCollected
+                  ]}>
+                    {item.frequency}
+                  </Text>
+                  
+                )}
+                {isCollected && item.collectedAt && (
+                  <Text style={styles.collectedTime}>
+                    Collected at: {new Date(item.collectedAt).toLocaleTimeString()}
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+
                 );
               })
             )}
@@ -2125,8 +2126,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
-    marginTop: 8,
-    alignSelf: 'flex-start',
+    marginLeft: 12,
+    alignSelf: 'center',
   },
   markCollectedButtonText: {
     color: '#FFFFFF',

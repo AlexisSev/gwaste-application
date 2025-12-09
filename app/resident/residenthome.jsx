@@ -942,7 +942,7 @@ export default function ResidentIndex() {
           {/* Feature Cards Grid */}
           <View style={styles.featureCardsGrid}>
             {/* Truck Location Card */}
-            <TouchableOpacity
+            <TouchableOpacity 
               style={styles.featureCard}
               onPress={() => router.push('/resident/map')}
             >
@@ -953,20 +953,11 @@ export default function ResidentIndex() {
               <Text style={styles.featureDescription}>Live tracking</Text>
             </TouchableOpacity>
 
-            {/* Notifications Panel Card */}
-            <TouchableOpacity
-              style={styles.featureCard}
-              onPress={() => router.push('/local-notification-panel')}
-            >
-              <View style={styles.featureIconContainer}>
-                <Ionicons name="notifications" size={20} color="#8BC500" />
-              </View>
-              <Text style={styles.featureTitle}>Notifications</Text>
-              <Text style={styles.featureDescription}>Manage alerts</Text>
-            </TouchableOpacity>
+            {/* Announcements Card */}
+            
 
             {/* Eco Tip Card */}
-            <TouchableOpacity
+            <TouchableOpacity 
               style={styles.featureCard}
               onPress={() => router.push('/resident/categorize')}
             >

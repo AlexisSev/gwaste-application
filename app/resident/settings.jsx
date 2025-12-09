@@ -2,14 +2,14 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Alert,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useResidentAuth } from '../../hooks/useResidentAuth';
 
@@ -143,69 +143,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Appearance Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Appearance</Text>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Feather name="moon" size={20} color="#8BC500" />
-              <View style={styles.settingContent}>
-                <Text style={styles.settingLabel}>Dark Mode</Text>
-                <Text style={styles.settingDescription}>Switch to dark theme</Text>
-              </View>
-            </View>
-            <Switch
-              value={darkModeEnabled}
-              onValueChange={setDarkModeEnabled}
-              trackColor={{ false: '#E0E0E0', true: '#8BC500' }}
-              thumbColor={darkModeEnabled ? '#fff' : '#f4f3f4'}
-            />
-          </View>
-        </View>
-
-        {/* Data & Storage Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Data & Storage</Text>
-          
-          <TouchableOpacity style={styles.settingItem} onPress={handleClearCache}>
-            <View style={styles.settingInfo}>
-              <Feather name="trash-2" size={20} color="#FF6B6B" />
-              <View style={styles.settingContent}>
-                <Text style={styles.settingLabel}>Clear Cache</Text>
-                <Text style={styles.settingDescription}>Free up storage space</Text>
-              </View>
-            </View>
-            <Feather name="chevron-right" size={20} color="#999" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Support Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support</Text>
-          
-          <TouchableOpacity style={styles.settingItem} onPress={handleContactSupport}>
-            <View style={styles.settingInfo}>
-              <Feather name="help-circle" size={20} color="#8BC500" />
-              <View style={styles.settingContent}>
-                <Text style={styles.settingLabel}>Contact Support</Text>
-                <Text style={styles.settingDescription}>Get help and support</Text>
-              </View>
-            </View>
-            <Feather name="chevron-right" size={20} color="#999" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.settingItem} onPress={handleAbout}>
-            <View style={styles.settingInfo}>
-              <Feather name="info" size={20} color="#8BC500" />
-              <View style={styles.settingContent}>
-                <Text style={styles.settingLabel}>About</Text>
-                <Text style={styles.settingDescription}>App version and information</Text>
-              </View>
-            </View>
-            <Feather name="chevron-right" size={20} color="#999" />
-          </TouchableOpacity>
-        </View>
 
         {/* Account Section */}
         <View style={styles.section}>
