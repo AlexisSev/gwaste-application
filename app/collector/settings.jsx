@@ -262,33 +262,7 @@ export default function CollectorSettingsScreen() {
             <Feather name="chevron-right" size={20} color="#999" />
           </TouchableOpacity>
         </View> */}
-
-        {/* Support Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support</Text>
-          
-          <TouchableOpacity style={styles.settingItem} onPress={handleContactSupport}>
-            <View style={styles.settingInfo}>
-              <Feather name="help-circle" size={20} color="#8BC500" />
-              <View style={styles.settingContent}>
-                <Text style={styles.settingLabel}>Contact Support</Text>
-                <Text style={styles.settingDescription}>Get help and support</Text>
-              </View>
-            </View>
-            <Feather name="chevron-right" size={20} color="#999" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.settingItem} onPress={handleAbout}>
-            <View style={styles.settingInfo}>
-              <Feather name="info" size={20} color="#8BC500" />
-              <View style={styles.settingContent}>
-                <Text style={styles.settingLabel}>About</Text>
-                <Text style={styles.settingDescription}>App version and information</Text>
-              </View>
-            </View>
-            <Feather name="chevron-right" size={20} color="#999" />
-          </TouchableOpacity>
-        </View>
+       
 
         {/* Account Section */}
         <View style={styles.section}>
