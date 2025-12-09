@@ -112,7 +112,7 @@ export default function ResidentSignup() {
         showsVerticalScrollIndicator={false}
         keyboardDismissMode="on-drag"
       >
-        {/* Logo */}
+        {/* Logo */} 
         <RNImage
           source={require("../assets/images/logo.png")}
           style={styles.logo}

@@ -97,7 +97,8 @@ export default function DraggableFloatingButton({ onPress, icon = 'robot', iconS
       {...panResponder.panHandlers}
     >
       <TouchableOpacity
-        style={[styles.button, { backgroundColor }]}
+        style={[styles.button, { backgroundColor }]} 
+        // style={[styles.button, { backgroundColor: "#3498db" }]} //TO CHANGE THE CHATBOT BACKGROUND COLOR
         onPress={handlePress}
         activeOpacity={0.8}
       >

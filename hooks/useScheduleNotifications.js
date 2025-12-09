@@ -1,21 +1,22 @@
-import * as Notifications from 'expo-notifications';
 import { useCallback, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { useNotification } from './useInAppNotification';
+import { useLocalNotifications } from './useLocalNotifications';
 
 export const useScheduleNotifications = (residentId) => {
   const { showNotification } = useNotification();
+  const { scheduleNotification, cancelAllNotifications } = useLocalNotifications();
 
   // Check if a notification should be shown based on schedule
   const checkAndShowNotification = useCallback(async (schedule) => {
     if (!schedule) return;
-    
+
     const now = new Date();
     const collectionTime = new Date(schedule.collection_time);
-    
+
     // Calculate time difference in minutes
     const timeDiff = (collectionTime - now) / (1000 * 60);
-    
+
     // Show notification if collection is within the next 30 minutes
     if (timeDiff > 0 && timeDiff <= 30) {
       showNotification({
@@ -24,26 +25,25 @@ export const useScheduleNotifications = (residentId) => {
         type: 'info',
         duration: 10000 // Show for 10 seconds
       });
-      
-      // Also schedule a local push notification
-      await schedulePushNotification(
-        '🚛 Garbage Collection Reminder',
-        `Your ${schedule.waste_type} collection is coming up soon!`
-      );
-    }
-  }, [showNotification]);
 
-  // Schedule local push notification
-  const schedulePushNotification = async (title, body) => {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        data: { data: 'garbage_collection_reminder' },
-      },
-      trigger: { seconds: 1 }, // Show after 1 second
-    });
-  };
+      // Also schedule a local push notification
+      await scheduleNotification({
+        title: '🚛 Garbage Collection Reminder',
+        body: `Your ${schedule.waste_type} collection is coming up soon!`,
+        data: { type: 'garbage_collection_reminder', scheduleId: schedule.id },
+        trigger: { minutes: 5 }, // Show in 5 minutes as a reminder
+      });
+    }
+  }, [showNotification, scheduleNotification]);
+
+  // Cancel all scheduled notifications for this resident
+  const cancelScheduledNotifications = useCallback(async () => {
+    try {
+      await cancelAllNotifications();
+    } catch (error) {
+      console.error('Error cancelling scheduled notifications:', error);
+    }
+  }, [cancelAllNotifications]);
 
   // Set up real-time subscription for schedule changes
   useEffect(() => {
@@ -94,5 +94,5 @@ export const useScheduleNotifications = (residentId) => {
     };
   }, [residentId, checkAndShowNotification]);
 
-  return { checkAndShowNotification };
+  return { checkAndShowNotification, cancelScheduledNotifications };
 };

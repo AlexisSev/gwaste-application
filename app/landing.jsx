@@ -42,22 +42,21 @@ export default function HomeScreen() {
           <Text style={styles.getStartedButtonText}>Get Started</Text>
         </PrimaryButton>
         
-        {/* Test Notification Button */}
-        <TouchableOpacity 
+        {/* <TouchableOpacity 
           style={styles.testButton}
           onPress={handleTestNotification}
         >
           <MaterialIcons name="notifications" size={20} color="#458A3D" />
           <Text style={styles.testButtonText}>Test Notification</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
         
-        {/* Link to Full Test Page */}
-        <TouchableOpacity 
+     
+        {/* <TouchableOpacity 
           style={styles.testLink}
           onPress={() => router.push('/test/notification-test')}
         >
           <Text style={styles.testLinkText}>More Notification Tests →</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </View>
     </View>
   );
