@@ -32,8 +32,7 @@ export default function RootLayout() {
   // }, []);
 
   if (!loaded) {
-    // Async font loading only occurs in development.
-    return null;
+    // Proceed without waiting for fonts to render splashscreen immediately
   }
 
   return (

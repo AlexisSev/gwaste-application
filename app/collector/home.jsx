@@ -355,8 +355,10 @@ export default function LandingScreen() {
           }
 
         };
+
+        console.log('�🔥🔥 BEFORE INSERT - Check if this appears in console 🔥🔥🔥');
         
-        console.log('📝 Inserting collection:', {
+        console.log('�📝 Inserting collection:', {
           route_id: insertData.route_id,
           area: insertData.areas_collected,
           collector_id: insertData.collector_id,
