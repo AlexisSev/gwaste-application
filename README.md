@@ -40,14 +40,14 @@ This project aims to develop the **G-Waste** system to help residents, operation
 
 ## 👨‍💻 Development Team
 
-Team Leader
+Team Leader:
 DaneMhark Lepiten
 
-System Analyst
+System Analyst:
 Christian Dave Berenguel
 
-Front-end Developer
+Front-end Developer:
 Kaye Chloe Malait
 
-Back-end Developer
+Back-end Developer:
 Alexis Sevilleno
